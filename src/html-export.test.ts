@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test, { before } from 'node:test';
 import { JSDOM } from 'jsdom';
-import type { Formula } from './shared/remediation.types.js';
+import { blocksFromResult } from './blocks.js';
+import type { ContentBlock, Formula } from './shared/remediation.types.js';
 
 // DOMPurify binds to whatever `window` exists at import time, so install one first.
 let buildStandaloneHtml: (input: {
-  originalText: string;
-  formulas: Formula[];
+  blocks: readonly ContentBlock[];
   pageImages: string[];
   title?: string;
   generatedAt?: Date;
@@ -28,13 +28,19 @@ const FORMULA: Formula = {
   needsReview: false,
 };
 
-function build(overrides: Partial<Parameters<typeof buildStandaloneHtml>[0]> = {}): string {
+interface BuildOptions {
+  originalText?: string;
+  formulas?: Formula[];
+  blocks?: ContentBlock[];
+  pageImages?: string[];
+}
+
+/** Whole-page shape by default; pass `blocks` to test an explicit reading order. */
+function build({ originalText = 'Some text.', formulas = [FORMULA], blocks, pageImages = [] }: BuildOptions = {}): string {
   return buildStandaloneHtml({
-    originalText: 'Some text.',
-    formulas: [FORMULA],
-    pageImages: [],
+    blocks: blocks ?? blocksFromResult({ originalText, formulas }),
+    pageImages,
     generatedAt: new Date('2026-09-24T00:00:00Z'),
-    ...overrides,
   });
 }
 
@@ -137,6 +143,33 @@ test('summarises the document', () => {
 test('reports how many formulas need review', () => {
   const html = build({ formulas: [FORMULA, { ...FORMULA, needsReview: true }] });
   assert.match(html, /2 formulas · 0 pages · 1 needing review/);
+});
+
+test('renders blocks in reading order', () => {
+  const html = build({
+    blocks: [
+      { kind: 'text', text: 'Before.' },
+      { kind: 'math', formula: FORMULA },
+      { kind: 'text', text: 'After.' },
+    ],
+  });
+  const before = html.indexOf('Before.');
+  const formula = html.indexOf('<mfrac>');
+  const after = html.indexOf('After.');
+  assert.ok(before > 0 && formula > before && after > formula);
+  assert.match(html, /<h3>Formula 1<\/h3>/);
+});
+
+test('renders inline $...$ maths in text as MathML', () => {
+  const html = build({ originalText: 'Half is $\\frac{1}{2}$, costs \\$5.' });
+  assert.match(html, /<math[^>]*>.*<mfrac>/s);
+  assert.doesNotMatch(html, /\$\\frac/, 'no raw source left in the prose');
+  assert.match(html, /costs \$5\./);
+});
+
+test('shows inline maths that will not convert as code', () => {
+  const html = build({ originalText: 'Broken $\\frac{1}$ here' });
+  assert.match(html, /<code>\\frac\{1\}<\/code>/);
 });
 
 test('escapeHtml covers the five significant characters', () => {

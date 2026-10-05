@@ -10,12 +10,14 @@
  * and screen readers read the mathematics directly. Everything travels in one
  * file: markup, styles, page images as data URIs.
  */
-import type { Formula } from './shared/remediation.types.js';
+import type { ContentBlock, Formula } from './shared/remediation.types.js';
+import { latexToMathml } from './shared/latex-to-mathml.js';
+import { splitInlineMath } from './inline-math.js';
 import { sanitizeMathml } from './mathml.js';
 
 export interface HtmlExportInput {
-  originalText: string;
-  formulas: Formula[];
+  /** The content in reading order. */
+  blocks: readonly ContentBlock[];
   /** Page images as `data:` URLs, in document order. */
   pageImages: string[];
   title?: string;
@@ -40,7 +42,25 @@ export function escapeHtml(text: string): string {
  * items and line-per-step working that the original document relied on.
  */
 function originalLayout(text: string): string {
-  return `<div class="original">${escapeHtml(text.replace(/^\n+|\s+$/g, ''))}</div>`;
+  return `<div class="original">${withInlineMath(text.replace(/^\n+|\s+$/g, ''))}</div>`;
+}
+
+/**
+ * Escapes prose and renders its `$...$` spans as MathML, so a screen reader
+ * reads them as maths. A span that will not convert is shown as its source in
+ * `<code>`: wrong maths read aloud is worse than visible LaTeX.
+ */
+function withInlineMath(text: string): string {
+  return splitInlineMath(text)
+    .map((segment) => {
+      if (segment.kind === 'text') return escapeHtml(segment.text);
+      try {
+        return sanitizeMathml(latexToMathml(segment.latex, segment.display));
+      } catch {
+        return `<code>${escapeHtml(segment.latex)}</code>`;
+      }
+    })
+    .join('');
 }
 
 /**
@@ -91,18 +111,17 @@ function renderFormula(formula: Formula, index: number): string {
 export function buildStandaloneHtml(input: HtmlExportInput): string {
   const title = input.title ?? 'Remediated Document';
   const generatedAt = input.generatedAt ?? new Date();
-  const flagged = input.formulas.filter((formula) => formula.needsReview).length;
+  const formulas = input.blocks.flatMap((block) => (block.kind === 'math' ? [block.formula] : []));
+  const flagged = formulas.filter((formula) => formula.needsReview).length;
 
   const sections: string[] = [];
 
-  if (input.originalText) {
-    sections.push(`<h2>Original text</h2>\n${originalLayout(input.originalText)}`);
-  }
-
-  if (input.formulas.length) {
-    sections.push(
-      `<h2>Formulas</h2>\n${input.formulas.map((formula, index) => renderFormula(formula, index)).join('\n')}`,
+  if (input.blocks.length) {
+    let formulaIndex = 0;
+    const content = input.blocks.map((block) =>
+      block.kind === 'text' ? originalLayout(block.text) : renderFormula(block.formula, formulaIndex++),
     );
+    sections.push(`<h2>Content</h2>\n${content.join('\n')}`);
   }
 
   if (input.pageImages.length) {
@@ -117,7 +136,7 @@ export function buildStandaloneHtml(input: HtmlExportInput): string {
   }
 
   const summary = [
-    `${input.formulas.length} formula${input.formulas.length === 1 ? '' : 's'}`,
+    `${formulas.length} formula${formulas.length === 1 ? '' : 's'}`,
     `${input.pageImages.length} page${input.pageImages.length === 1 ? '' : 's'}`,
     flagged ? `${flagged} needing review` : null,
   ]

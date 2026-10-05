@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { escapeLatex, pageImageFilename, toDisplayMath } from './latex.js';
+import { buildLatexDocument, escapeLatex, pageImageFilename, textWithInlineMath, toDisplayMath } from './latex.js';
+import type { Formula } from './shared/remediation.types.js';
 
 test('escapeLatex does not re-escape braces it introduces', () => {
   // The chained-replace version produced \textbackslash\{\}, which prints literally.
@@ -81,4 +82,64 @@ test('toDisplayMath does not mistake a leading $ for a delimiter pair', () => {
 test('pageImageFilename is 1-based', () => {
   assert.equal(pageImageFilename(0), 'page-1.png');
   assert.equal(pageImageFilename(9), 'page-10.png');
+});
+
+test('textWithInlineMath keeps inline maths and escapes only the prose', () => {
+  assert.equal(
+    textWithInlineMath(String.raw`50% of $x^{2} \pm 1$ & more`),
+    String.raw`50\% of $x^{2} \pm 1$ \& more`,
+  );
+});
+
+test('textWithInlineMath normalizes unicode inside the maths', () => {
+  assert.equal(textWithInlineMath('so $x = ±√2$'), String.raw`so $x = \pm \sqrt{2}$`);
+});
+
+test('textWithInlineMath keeps money as an escaped dollar', () => {
+  assert.equal(textWithInlineMath(String.raw`costs \$5 or $5 and $10`), String.raw`costs \$5 or \$5 and \$10`);
+});
+
+test('textWithInlineMath puts display maths on its own lines', () => {
+  assert.equal(textWithInlineMath('see $$a = b$$ now'), 'see \n\\[\na = b\n\\]\n now');
+});
+
+const FORMULA = (latex: string, needsReview = false): Formula => ({
+  latex,
+  mathml: needsReview ? '' : '<math></math>',
+  description: '',
+  mathspeak: '',
+  needsReview,
+});
+
+test('buildLatexDocument emits blocks in reading order', () => {
+  const tex = buildLatexDocument({
+    blocks: [
+      { kind: 'text', text: 'First $a$.' },
+      { kind: 'math', formula: FORMULA('E = mc^2') },
+      { kind: 'text', text: 'Last.' },
+    ],
+    pageCount: 0,
+  });
+  const first = tex.indexOf('First $a$.');
+  const formula = tex.indexOf('\\[\nE = mc^2\n\\]');
+  const last = tex.indexOf('Last.');
+  assert.ok(first > 0 && formula > first && last > formula, tex);
+  assert.ok(tex.includes('\\begin{document}') && tex.trimEnd().endsWith('\\end{document}'));
+  assert.ok(!tex.includes('Original Page Images'), 'no figures without pages');
+});
+
+test('buildLatexDocument adds one figure per page', () => {
+  const tex = buildLatexDocument({ blocks: [], pageCount: 2 });
+  assert.ok(tex.includes('page-1.png') && tex.includes('page-2.png'));
+  assert.ok(!tex.includes('page-3.png'));
+  assert.ok(!tex.includes('\\section*{Content}'), 'no empty content section');
+});
+
+test('buildLatexDocument marks formulas that need review', () => {
+  const tex = buildLatexDocument({
+    blocks: [{ kind: 'math', formula: FORMULA('a') }, { kind: 'math', formula: FORMULA('\\bad{', true) }],
+    pageCount: 0,
+  });
+  assert.match(tex, /% Formula 2 needs review/);
+  assert.doesNotMatch(tex, /% Formula 1 needs review/);
 });
