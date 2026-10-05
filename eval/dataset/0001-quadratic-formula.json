@@ -1,0 +1,9 @@
+{
+  "id": "0001-quadratic-formula",
+  "image": "images/0001-quadratic-formula.png",
+  "category": "typeset",
+  "latex": "x = \\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}",
+  "speech": "x equals the fraction with numerator negative b plus or minus the square root of b squared minus 4 a c and denominator 2 a",
+  "validated": { "by": "", "on": "" },
+  "notes": "Seed entry. The image is not committed yet: crop it from a textbook page at 2x and drop it at the path above. `speech` is the ClearSpeak rendering and still needs confirmation from a screen-reader user before it counts as validated."
+}

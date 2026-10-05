@@ -1,0 +1,5 @@
+{
+  "name": "Formula Accessibility Remediator",
+  "description": "Upload an image of a PDF page or a screenshot containing mathematical or chemical formulas, and this applet will use Gemini to generate accessible text descriptions, LaTeX, and MathML representations.",
+  "requestFramePermissions": []
+}

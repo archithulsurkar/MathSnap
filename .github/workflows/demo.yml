@@ -1,0 +1,67 @@
+# Publishes the browser-only demo to GitHub Pages.
+#
+# The deterministic half of the pipeline — normalisation, MathML, ClearSpeak,
+# MathSpeak — needs no model, no key and no server, so it can be served as a
+# static page. Uploading a page image still needs a backend and says so.
+name: demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a half-finished deploy; let the running one land first.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Node 22 ships npm 10, which rejects lockfiles written by npm 11: npm 11
+      # omits the peer deps of optional wasm packages that npm 10 expects.
+      - run: npm install -g npm@11
+
+      - run: npm ci
+
+      # The demo is only worth publishing if the deterministic pipeline works,
+      # and that is exactly what the unit suite covers.
+      - run: npm test
+
+      # Pages serves the site from a subpath, so the base href has to match the
+      # repository name or every asset 404s.
+      - name: Build
+        run: npx ng build --configuration production --base-href "/${GITHUB_REPOSITORY#*/}/"
+
+      # Without this, Pages runs the output through Jekyll, which silently drops
+      # files and directories beginning with an underscore.
+      - run: touch dist/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

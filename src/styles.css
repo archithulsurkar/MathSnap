@@ -1,0 +1,180 @@
+@import 'tailwindcss';
+
+/* Sources Tailwind scans for class names. */
+@source '../index.html';
+@source './**/*.{html,ts}';
+
+/*
+ * The look is a worksheet, not a dashboard: ink on paper, rules instead of
+ * cards, one pen-green accent, and a highlighter for anything that needs a
+ * second look. The typeface is Atkinson Hyperlegible, drawn by the Braille
+ * Institute for readers with low vision, bundled so it works offline.
+ *
+ * Colours are CSS variables so light and dark swap in one place; the @theme
+ * block exposes them to Tailwind as bg-paper, text-ink, border-rule and so on.
+ */
+:root {
+  --paper: #fbfbf9;
+  --panel: #ffffff;
+  --ink: #1c1c1a;
+  --ink-soft: #57574f;
+  --rule: #dcdcd4;
+  --accent: #0f5c45;
+  --accent-hover: #0a4735;
+  --accent-ink: #ffffff;
+  --accent-wash: #e5f0eb;
+  --mark: #fbe98a;
+  --mark-ink: #3a3200;
+  --line: rgb(28 28 26 / 0.07);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #141413;
+    --panel: #1c1c1a;
+    --ink: #ebebe5;
+    --ink-soft: #a8a89e;
+    --rule: #36362f;
+    --accent: #72cfa9;
+    --accent-hover: #8fdcbc;
+    --accent-ink: #0a1f17;
+    --accent-wash: #15302a;
+    --mark: #5c5214;
+    --mark-ink: #fff3aa;
+    --line: rgb(235 235 229 / 0.07);
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-panel: var(--panel);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-rule: var(--rule);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-wash: var(--accent-wash);
+  --color-mark: var(--mark);
+  --color-mark-ink: var(--mark-ink);
+  --font-sans: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+/*
+ * The handful of patterns the template repeats. Anything used once stays as
+ * utilities in the markup. Declared with @utility so they compose with @apply
+ * and sit in the utilities layer, where one-off utilities on the element can
+ * still override them.
+ */
+
+/* Feedback on press, not on release, and instant. */
+@utility press {
+  transition: transform 100ms ease-out, background-color 150ms ease-out, color 150ms ease-out;
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &:active:not(:disabled) {
+      transform: none;
+    }
+  }
+}
+
+@utility focus-ring {
+  @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
+}
+
+/* Compact for a mouse; at least 44px for a finger. */
+@utility btn {
+  @apply press focus-ring inline-flex items-center justify-center gap-2 rounded-md font-bold
+    disabled:cursor-not-allowed disabled:opacity-45 pointer-coarse:min-h-11 pointer-coarse:min-w-11;
+}
+@utility btn-primary {
+  @apply btn bg-accent px-5 py-2.5 text-accent-ink hover:bg-accent-hover;
+}
+@utility btn-quiet {
+  @apply btn border border-rule bg-panel px-4 py-2 text-ink hover:border-ink-soft;
+}
+/* Reads as a link; still a button, with a button's hit area. */
+@utility btn-text {
+  @apply btn px-2 py-1.5 text-accent underline-offset-4 hover:underline;
+}
+@utility btn-icon {
+  @apply btn p-2 font-normal text-ink-soft hover:bg-accent-wash hover:text-ink;
+}
+
+/* A plain bordered sheet for panels. No shadow: it sits on the page, not above it. */
+@utility sheet {
+  @apply rounded-md border border-rule bg-panel;
+}
+
+@utility field {
+  @apply w-full rounded-md border border-rule bg-panel px-3 py-2 text-ink placeholder:text-ink-soft/70
+    focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30;
+}
+@utility field-label {
+  @apply block font-bold text-ink;
+}
+@utility hint {
+  @apply text-[0.9375rem] text-ink-soft;
+}
+
+html {
+  font-size: 106.25%; /* 17px: Atkinson reads best a touch larger than 16px. */
+}
+
+body {
+  @apply bg-paper font-sans text-ink;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
+/* Writing paper: faint ruled lines aligned to the text's line height. */
+.ruled {
+  --lh: 1.75rem;
+  line-height: var(--lh);
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--lh) - 1px), var(--line) calc(var(--lh) - 1px), var(--line) var(--lh));
+  background-attachment: local;
+  /* Starts below the field's top padding, so each rule sits under a line of text. */
+  background-position: 0 0.5rem;
+}
+
+/* A highlighter stroke, a little ragged at the ends, like a real one. */
+.highlight {
+  color: var(--mark-ink);
+  background: linear-gradient(100deg, transparent 0.2em, var(--mark) 0.35em, var(--mark) calc(100% - 0.35em), transparent calc(100% - 0.2em));
+  background-size: 100% 78%;
+  background-position: 0 70%;
+  background-repeat: no-repeat;
+  padding: 0 0.35em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Panels open straight down out of the bar above them, and close the same way. */
+.sheet-in {
+  transform-origin: top center;
+  animation: sheet-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.toast {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-in { animation: fade-in 120ms ease-out; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+}

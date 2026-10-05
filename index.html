@@ -1,0 +1,24 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Formula Accessibility Remediator</title>
+  <base href="/" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Inline so there is no separate asset to 404 on. -->
+  <link
+    rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E2%88%91%3C/text%3E%3C/svg%3E" />
+  <!--
+    Dependencies are bundled from node_modules by the Angular builder. The
+    previous importmap pinned a second copy of Angular from a CDN that the
+    bundler ignored, and pdf.js was loaded from a version the app no longer uses.
+    Tailwind is compiled from src/styles.css and injected by the builder, so the
+    play-CDN script is gone too.
+  -->
+</head>
+<body>
+  <app-root></app-root>
+</body>
+</html>
