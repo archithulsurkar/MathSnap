@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { UpstreamError, isModelResult, parseModelJson } from './provider.js';
+import { PROMPT, UpstreamError, isModelResult, parseModelJson } from './provider.js';
 
 /** What the model is now asked for: a transcription and LaTeX, nothing else. */
 const VALID = {
@@ -109,4 +109,11 @@ test('isModelResult guards each field', () => {
   assert.equal(isModelResult({ originalText: 1, formulas: [] }), false);
   assert.equal(isModelResult({ originalText: '', formulas: [{}] }), false);
   assert.equal(isModelResult({ originalText: '', formulas: [] }), true);
+});
+
+test('prompt keeps the backslashes on its LaTeX examples', () => {
+  for (const command of ['\\pm', '\\sqrt{', '\\times', '\\rightarrow', '\\Delta', '\\leq', '\\frac{']) {
+    assert.ok(PROMPT.includes(command), `prompt should contain ${command}`);
+  }
+  assert.ok(!/[\t\r]/.test(PROMPT), 'prompt should not contain TAB or CR');
 });

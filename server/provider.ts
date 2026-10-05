@@ -70,7 +70,9 @@ export class UpstreamError extends Error {
   }
 }
 
-export const PROMPT = `Analyze the provided image of a document page. Your task is to extract two things:
+// String.raw keeps the LaTeX backslashes: in a plain template literal `\t` and
+// `\r` become TAB and CR, and `\p`, `\s`, `\D`, `\l` lose their backslash.
+export const PROMPT = String.raw`Analyze the provided image of a document page. Your task is to extract two things:
 1.  **Full Text Content**: Transcribe all the text from the image exactly as written, keeping its layout in plain text: the original line breaks, blank lines between paragraphs, headings on their own line, list bullets and numbers, and indentation. Do not reflow, summarise, correct or reorder the text.
 2.  **Formulas**: Identify all distinct mathematical or chemical formulas, and give the LaTeX for each.
 
