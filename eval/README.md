@@ -27,6 +27,27 @@ Output is a per-category table and `eval/report.json`. Entries whose image is
 missing are skipped and reported as pending, so the harness runs before the set
 is finished.
 
+### Scoring predictions made elsewhere
+
+```bash
+npm run eval -- --predictions preds.jsonl
+```
+
+No backend is called; the file's answers are scored with the same metric. This
+is how checkpoints from the training pipeline ([docs/TRAINING.md](../docs/TRAINING.md))
+are compared with the hosted backends. One JSON object per line, in either shape:
+
+```jsonl
+{"id": "0001-quadratic-formula", "latex": "x = \\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}"}
+{"id": "0001-quadratic-formula", "originalText": "", "formulas": [{"latex": "..."}]}
+```
+
+The second is the app's response shape, so a model's raw JSON reply can be
+written out as is. `"latex": null` or an empty `formulas` array counts as a
+miss. Every dataset entry is scored: one the file has no line for is reported
+as an error, so a partial file cannot inflate the result. Ids the dataset does
+not know are listed and ignored.
+
 ## What is measured
 
 **exact** — the published number. Both sides are converted to MathML and reduced
