@@ -5,11 +5,15 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { Formula, RemediationService, RemediationResult } from './services/remediation.service';
 import { buildLatexDocument, pageImageFilename } from './latex';
 import { buildStandaloneHtml } from './html-export';
-import { blocksFromResult } from './blocks';
+import { blocksFromResult, resultFromBlocks } from './blocks';
+import { splitInlineMath } from './inline-math';
+import { countRegions, fitWithin, toPixelRect, type Region } from './regions';
+import { RegionEditorComponent } from './region-editor.component';
 import { EXAMPLE_LATEX, remediateLatex } from './local-remediation';
 import { ProviderService, type ProviderOptions } from './services/provider.service';
 import { sanitizeMathml } from './mathml';
-import { MAX_PDF_PAGES } from './shared/remediation.types';
+import { latexToMathml } from './shared/latex-to-mathml';
+import { MAX_PDF_PAGES, MAX_REGIONS_PER_UPLOAD, type ContentBlock, type RegionKind } from './shared/remediation.types';
 import { enrichFormulas } from './shared/enrich';
 import { AuthService } from './services/auth.service';
 import { HistoryService } from './services/history.service';
@@ -19,10 +23,13 @@ import { describeItem, toHistoryInsert, type HistoryItem, type HistorySource } f
 // worker build always matches the bundled library version.
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.mjs';
 
-type Status = 'idle' | 'loading' | 'success' | 'error';
+/** `annotating`: pages are rendered and the user is drawing boxes before anything is sent. */
+type Status = 'idle' | 'loading' | 'annotating' | 'success' | 'error';
 
 interface FormulaView {
   formula: Formula;
+  /** 1-based, counting formulas only. */
+  number: number;
   /**
    * MathML is model output derived from an uploaded file, so it is untrusted:
    * text embedded in the document can steer the model into emitting markup.
@@ -30,6 +37,17 @@ interface FormulaView {
    */
   safeMathml: SafeHtml;
 }
+
+/** A piece of a text block: prose, inline maths as MathML, or maths that would not convert. */
+type InlineView =
+  | { kind: 'text'; text: string }
+  | { kind: 'math'; latex: string; safeMathml: SafeHtml }
+  | { kind: 'code'; latex: string };
+
+type BlockView = { kind: 'text'; segments: InlineView[] } | ({ kind: 'math' } & FormulaView);
+
+/** What the loading view says it is reading: whole pages, boxes, or a mix of both. */
+type ProgressUnit = 'page' | 'box' | 'part';
 
 /** A rendered page ready to send to the API. */
 interface PageImage {
@@ -45,6 +63,12 @@ const PDF_RENDER_SCALE = 2.0;
 
 /** Longest edge of the page images embedded in the HTML export. */
 const EMBEDDED_IMAGE_MAX_WIDTH = 1200;
+
+/**
+ * Longest edge of a cropped box sent to the model. A box from a phone photo
+ * can be thousands of pixels across; past this it only costs upload size.
+ */
+const MAX_CROP_EDGE = 2048;
 
 const ACCEPTED_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'] as const;
 type UploadType = (typeof ACCEPTED_UPLOAD_TYPES)[number];
@@ -64,6 +88,7 @@ const FILE_SIGNATURES: ReadonlyArray<{ type: UploadType; bytes: number[]; offset
   selector: 'app-root',
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RegionEditorComponent],
 })
 export class AppComponent {
   private remediationService = inject(RemediationService);
@@ -76,8 +101,25 @@ export class AppComponent {
   uploadedImages: WritableSignal<string[]> = signal([]);
   /** Non-fatal warning shown alongside a successful result, e.g. a truncated PDF. */
   notice: WritableSignal<string> = signal('');
-  /** Page-level progress while a multi-page document is analyzed. */
-  progress: WritableSignal<{ current: number; total: number } | null> = signal(null);
+  /** Progress while pages or boxes are read. */
+  progress: WritableSignal<{ current: number; total: number; unit: ProgressUnit } | null> = signal(null);
+  /** Set while waiting out the server's rate limit before a retry. */
+  rateLimitNote: WritableSignal<string> = signal('');
+
+  /** The rendered pages of the current upload, kept for cropping. */
+  pages: WritableSignal<PageImage[]> = signal([]);
+  /** Boxes drawn on each page, in reading order. Same length as `pages`. */
+  regionsByPage: WritableSignal<Region[][]> = signal([]);
+  currentPage: WritableSignal<number> = signal(0);
+  private uploadName = '';
+
+  readonly regionCount = computed(() => countRegions(this.regionsByPage()));
+  readonly regionsRemaining = computed(() => MAX_REGIONS_PER_UPLOAD - this.regionCount());
+  readonly currentRegions = computed(() => this.regionsByPage()[this.currentPage()] ?? []);
+  readonly pagesWithoutBoxes = computed(() => this.regionsByPage().filter((regions) => !regions.length).length);
+
+  /** The result in reading order. What the results view and both exports show. */
+  blocks: WritableSignal<ContentBlock[]> = signal([]);
   /** Transient feedback for the copy buttons, keyed by the copied text. */
   copyFeedback: WritableSignal<string> = signal('');
   private copyFeedbackTimer?: ReturnType<typeof setTimeout>;
@@ -86,12 +128,37 @@ export class AppComponent {
    * Sanitized once per result rather than from the template binding, which would
    * re-sanitize and re-allocate on every change detection pass.
    */
-  readonly formulaViews = computed<FormulaView[]>(() =>
-    this.remediationResult().formulas.map((formula) => ({
-      formula,
-      safeMathml: this.sanitizer.bypassSecurityTrustHtml(sanitizeMathml(formula.mathml)),
-    })),
-  );
+  readonly blockViews = computed<BlockView[]>(() => {
+    let number = 0;
+    return this.blocks().map((block): BlockView => {
+      if (block.kind === 'text') return { kind: 'text', segments: this.inlineViews(block.text) };
+      return {
+        kind: 'math',
+        formula: block.formula,
+        number: ++number,
+        safeMathml: this.sanitizer.bypassSecurityTrustHtml(sanitizeMathml(block.formula.mathml)),
+      };
+    });
+  });
+
+  readonly formulaCount = computed(() => this.blockViews().filter((view) => view.kind === 'math').length);
+
+  /**
+   * Inline `$...$` maths in a text block, rendered as MathML so a screen
+   * reader reads it as maths. A span that will not convert stays visible as
+   * source rather than being narrated wrongly.
+   */
+  private inlineViews(text: string): InlineView[] {
+    return splitInlineMath(text).map((segment): InlineView => {
+      if (segment.kind === 'text') return segment;
+      try {
+        const mathml = sanitizeMathml(latexToMathml(segment.latex, segment.display));
+        return { kind: 'math', latex: segment.latex, safeMathml: this.sanitizer.bypassSecurityTrustHtml(mathml) };
+      } catch {
+        return { kind: 'code', latex: segment.latex };
+      }
+    });
+  }
 
   async handleFileChange(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
@@ -120,53 +187,120 @@ export class AppComponent {
           ? await this.pdfToImages(file)
           : [await this.fileToPageImage(file, detectedType)];
 
+      // Nothing is sent yet: the user marks the reading order first, or
+      // chooses to have each page read whole.
+      this.uploadName = file.name;
+      this.pages.set(pages);
       this.uploadedImages.set(pages.map((page) => page.dataUrl));
+      this.regionsByPage.set(pages.map(() => []));
+      this.currentPage.set(0);
+      this.status.set('annotating');
+    } catch (error) {
+      this.fail(error, 'Failed to process file. An unknown error occurred.');
+    }
+  }
 
-      const merged: RemediationResult = { formulas: [], originalText: '' };
-      const failedPages: number[] = [];
+  setCurrentRegions(regions: Region[]): void {
+    const page = this.currentPage();
+    this.regionsByPage.update((all) => all.map((existing, index) => (index === page ? regions : existing)));
+  }
 
-      for (const [index, page] of pages.entries()) {
-        this.progress.set({ current: index + 1, total: pages.length });
-        try {
-          const result = await this.remediationService.remediateImage(page.base64, page.mimeType);
-          merged.formulas.push(...result.formulas);
-          if (result.originalText) {
-            merged.originalText += (merged.originalText ? '\n\n' : '') + result.originalText;
-          }
-        } catch (error) {
-          // One bad page should not discard the pages that did work.
-          console.error(`Page ${index + 1} failed:`, error);
-          failedPages.push(index + 1);
-          if (failedPages.length === pages.length) {
-            throw error;
-          }
+  goToPage(index: number): void {
+    if (index >= 0 && index < this.pages().length) this.currentPage.set(index);
+  }
+
+  /** The old behaviour: every page read whole, text first and then its formulas. */
+  analyzeWholePages(): Promise<void> {
+    return this.analyze(this.pages().map((page) => ({ page, regions: [] })));
+  }
+
+  /** Each box read on its own, in the order drawn. Pages with no boxes are read whole. */
+  analyzeRegions(): Promise<void> {
+    const regions = this.regionsByPage();
+    return this.analyze(this.pages().map((page, index) => ({ page, regions: regions[index] ?? [] })));
+  }
+
+  /**
+   * Reads pages and boxes in reading order and shows the result.
+   *
+   * One request per box, or per page without boxes. A request that fails is
+   * skipped and reported, so one unreadable box does not discard the rest.
+   */
+  private async analyze(work: { page: PageImage; regions: Region[] }[]): Promise<void> {
+    const boxed = work.filter((item) => item.regions.length).length;
+    const unit: ProgressUnit = boxed === 0 ? 'page' : boxed === work.length ? 'box' : 'part';
+    const total = work.reduce((sum, item) => sum + Math.max(1, item.regions.length), 0);
+
+    this.status.set('loading');
+    this.rateLimitNote.set('');
+    this.progress.set({ current: 0, total, unit });
+
+    const blocks: ContentBlock[] = [];
+    const failures: string[] = [];
+    let step = 0;
+
+    const read = async (base64: string, mimeType: string, label: string, region?: RegionKind) => {
+      this.progress.set({ current: ++step, total, unit });
+      try {
+        const result = await this.remediationService.remediateImage(base64, mimeType, region, {
+          onRateLimitWait: (seconds) => this.rateLimitNote.set(`Waiting ${seconds}s for the rate limit…`),
+        });
+        blocks.push(...blocksFromResult(result));
+      } catch (error) {
+        console.error(`${label} failed:`, error);
+        failures.push(label);
+        if (failures.length === total) throw error;
+      } finally {
+        this.rateLimitNote.set('');
+      }
+    };
+
+    try {
+      for (const [pageIndex, { page, regions }] of work.entries()) {
+        const pageLabel = `page ${pageIndex + 1}`;
+        if (!regions.length) {
+          await read(page.base64, page.mimeType, pageLabel);
+          continue;
+        }
+
+        const image = await AppComponent.loadImage(page.dataUrl);
+        for (const [regionIndex, region] of regions.entries()) {
+          const crop = AppComponent.cropRegion(image, page.mimeType, region);
+          await read(crop.base64, crop.mimeType, `box ${regionIndex + 1} on ${pageLabel}`, region.kind);
         }
       }
-
-      if (failedPages.length) {
-        this.appendNotice(
-          failedPages.length === 1
-            ? `Page ${failedPages[0]} couldn’t be read, so it was skipped.`
-            : `Pages ${failedPages.join(', ')} couldn’t be read, so they were skipped.`,
-        );
-      }
-
-      if (merged.formulas.length > 0 || merged.originalText) {
-        this.remediationResult.set(merged);
-        this.status.set('success');
-        void this.saveToHistory(merged, 'upload', pages.length, file.name);
-      } else {
-        this.errorMessage.set('No formulas or text were found in the file. Please try a different one.');
-        this.status.set('error');
-      }
     } catch (error) {
-      console.error(error);
-      // Server errors already carry a user-facing message; don't bury it in a prefix.
-      this.errorMessage.set(
-        error instanceof Error ? error.message : 'Failed to process file. An unknown error occurred.',
-      );
-      this.status.set('error');
+      this.fail(error, 'Failed to process file. An unknown error occurred.');
+      return;
     }
+
+    if (failures.length) {
+      const list = failures.join(', ');
+      this.appendNotice(`Couldn’t read ${list}, so ${failures.length === 1 ? 'it was' : 'they were'} skipped.`);
+    }
+
+    if (!blocks.length) {
+      this.errorMessage.set('No formulas or text were found in the file. Please try a different one.');
+      this.status.set('error');
+      return;
+    }
+
+    this.showBlocks(blocks);
+    void this.saveToHistory(this.remediationResult(), 'upload', work.length, this.uploadName);
+  }
+
+  /** Shows a result. `remediationResult` keeps the flat shape that history saves. */
+  private showBlocks(blocks: ContentBlock[]): void {
+    this.blocks.set(blocks);
+    this.remediationResult.set(resultFromBlocks(blocks));
+    this.status.set('success');
+  }
+
+  private fail(error: unknown, fallback: string): void {
+    console.error(error);
+    // Server errors already carry a user-facing message; don't bury it in a prefix.
+    this.errorMessage.set(error instanceof Error ? error.message : fallback);
+    this.status.set('error');
   }
 
   /** Text in the paste-LaTeX box. */
@@ -297,8 +431,9 @@ export class AppComponent {
     this.status.set('loading');
     try {
       const formulas = await enrichFormulas(item.latex);
-      this.remediationResult.set({ originalText: item.original_text, formulas });
-      this.status.set('success');
+      // History keeps text and formulas apart, so a reopened item has lost
+      // its reading order: text first, then formulas.
+      this.showBlocks(blocksFromResult({ originalText: item.original_text, formulas }));
       if (item.source === 'upload') {
         this.appendNotice('Page images are not saved with your history, so this result has none.');
       }
@@ -420,8 +555,7 @@ export class AppComponent {
         return;
       }
 
-      this.remediationResult.set(result);
-      this.status.set('success');
+      this.showBlocks(blocksFromResult(result));
       void this.saveToHistory(result, 'paste', 0);
 
       const flagged = result.formulas.filter((formula) => formula.needsReview).length;
@@ -470,10 +604,16 @@ export class AppComponent {
     this.latexInput.set('');
     this.status.set('idle');
     this.remediationResult.set({ formulas: [], originalText: '' });
+    this.blocks.set([]);
     this.errorMessage.set('');
     this.uploadedImages.set([]);
+    this.pages.set([]);
+    this.regionsByPage.set([]);
+    this.currentPage.set(0);
+    this.uploadName = '';
     this.notice.set('');
     this.progress.set(null);
+    this.rateLimitNote.set('');
     this.copyFeedback.set('');
     this.saveStatus.set('');
   }
@@ -509,16 +649,14 @@ export class AppComponent {
    * readers read the mathematics directly.
    */
   async exportToHtml(): Promise<void> {
-    const result = this.remediationResult();
-    if (!result.formulas.length && !result.originalText) {
-      return;
-    }
+    const blocks = this.blocks();
+    if (!blocks.length) return;
 
     const pageImages = await Promise.all(
       this.uploadedImages().map((dataUrl) => AppComponent.shrinkForEmbedding(dataUrl)),
     );
 
-    const html = buildStandaloneHtml({ blocks: blocksFromResult(result), pageImages });
+    const html = buildStandaloneHtml({ blocks, pageImages });
 
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
     AppComponent.triggerDownload(url, 'remediated-document.html');
@@ -535,12 +673,7 @@ export class AppComponent {
    */
   private static async shrinkForEmbedding(dataUrl: string): Promise<string> {
     try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const element = new Image();
-        element.onload = () => resolve(element);
-        element.onerror = () => reject(new Error('Could not read the page image.'));
-        element.src = dataUrl;
-      });
+      const image = await AppComponent.loadImage(dataUrl);
 
       if (image.width <= EMBEDDED_IMAGE_MAX_WIDTH) return dataUrl;
 
@@ -558,16 +691,46 @@ export class AppComponent {
     }
   }
 
-  exportToLatex(): void {
-    const result = this.remediationResult();
-    if (!result.formulas.length && !result.originalText) {
-      return;
-    }
-
-    const latexContent = buildLatexDocument({
-      blocks: blocksFromResult(result),
-      pageCount: this.uploadedImages().length,
+  private static loadImage(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('Could not read the page image.'));
+      element.src = src;
     });
+  }
+
+  /**
+   * Crops one box out of the page at its full resolution, shrunk only if it
+   * is very large. Photos stay JPEG; anything else becomes PNG, which keeps
+   * pen strokes and small subscripts crisp.
+   */
+  private static cropRegion(
+    image: HTMLImageElement,
+    sourceMimeType: string,
+    region: Region,
+  ): { base64: string; mimeType: string } {
+    const source = toPixelRect(region, image.naturalWidth, image.naturalHeight);
+    const size = fitWithin(source.w, source.h, MAX_CROP_EDGE);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Could not create a canvas to crop the page.');
+
+    context.drawImage(image, source.x, source.y, source.w, source.h, 0, 0, size.width, size.height);
+
+    const mimeType = sourceMimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    const dataUrl = canvas.toDataURL(mimeType, 0.92);
+    return { base64: dataUrl.split(',')[1], mimeType };
+  }
+
+  exportToLatex(): void {
+    const blocks = this.blocks();
+    if (!blocks.length) return;
+
+    const latexContent = buildLatexDocument({ blocks, pageCount: this.uploadedImages().length });
     const url = URL.createObjectURL(new Blob([latexContent], { type: 'text/latex' }));
     AppComponent.triggerDownload(url, 'remediated-document.tex');
     URL.revokeObjectURL(url);

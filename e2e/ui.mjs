@@ -45,18 +45,23 @@ log('navigating', APP);
 await page.goto(APP, { waitUntil: 'networkidle' });
 
 // --- boot ---
-const h1 = await page.textContent('h1');
-check('app boots and renders', h1?.includes('Formula Accessibility Remediator'), h1?.trim());
+const brand = await page.textContent('header');
+check('app boots and renders', brand?.includes('Formula Remediator'), brand?.trim().slice(0, 40));
 check('no uncaught exceptions on boot', pageErrors.length === 0, pageErrors.join(' | '));
 check('idle upload card shown', await page.isVisible('text=Upload a page'));
 
 // --- tailwind actually compiled (not the CDN script) ---
-const headingColor = await page.$eval('h1', (el) => getComputedStyle(el).backgroundImage);
-check('tailwind styles applied', headingColor.includes('gradient'), headingColor.slice(0, 40));
+const buttonBackground = await page.$eval('.btn-primary', (el) => getComputedStyle(el).backgroundColor);
+check('tailwind styles applied', !/rgba\(0, 0, 0, 0\)|transparent/.test(buttonBackground), buttonBackground);
 
 // --- upload the multi-page PDF ---
 log(`uploading ${PDF_PAGES}-page PDF`);
 await page.setInputFiles('#file-upload', PDF);
+
+// Uploads stop at the annotate step; this run takes the whole-page path.
+await page.waitForSelector('text=Mark the reading order', { timeout: 30000 });
+check('upload opens the annotate step', true);
+await page.click('button:has-text("Analyze whole page instead")');
 
 // progress text proves the multi-page loop is running
 const progressSelector = `text=/Reading page \\d+ of ${PDF_PAGES}/`;
@@ -79,8 +84,8 @@ await page.waitForSelector('text=Results', { timeout: 420000 });
 const pageImages = await page.$$eval('figure img', (els) => els.map((e) => e.getAttribute('alt')));
 check(`all ${PDF_PAGES} pages rendered and shown`, pageImages.length === PDF_PAGES, JSON.stringify(pageImages));
 
-const summary = await page.textContent('p:has-text("Found")');
-check('summary reports pages', new RegExp(`across ${PDF_PAGES} page`).test(summary), summary?.trim());
+const summary = await page.textContent('p:has-text("from")');
+check('summary reports pages', new RegExp(`from ${PDF_PAGES} pages`).test(summary), summary?.trim());
 
 const formulaCards = await page.$$('h2:has-text("Formula")');
 check('formula cards rendered', formulaCards.length > 0, `${formulaCards.length} cards`);
@@ -126,10 +131,33 @@ check('.tex has document structure', tex.includes('\\begin{document}') && tex.in
 check('.tex has display math', tex.includes('\\['));
 const expectedImages = Array.from({ length: PDF_PAGES }, (_, i) => `page-${i + 1}.png`);
 check(`.tex references all ${PDF_PAGES} page images`, expectedImages.every((n) => tex.includes(n)));
-check('.tex has no unescaped raw ampersand in text', !/[^\\]&(?![a-z]+;)/.test(tex.split('\\section*{Remediated Formulas}')[0].replace(/^\\.*$/gm, '')));
+// Ampersands are legal inside maths (align); in prose they must be escaped.
+const prose = (tex.split('\\section*{Content}')[1] ?? '')
+  .replace(/\\\[[\s\S]*?\\\]/g, '')
+  .replace(/\\begin\{(\w+\*?)\}[\s\S]*?\\end\{\1\}/g, '')
+  .replace(/\$[^$]*\$/g, '');
+check('.tex has no unescaped raw ampersand in text', !/(^|[^\\])&/.test(prose));
 
 await page.screenshot({ path: path.join(TMP, 'app-success.png'), fullPage: false });
 log('screenshot saved');
+
+// --- region path: one box drawn around a formula, read on its own ---
+log('drawing one maths box on page 1');
+await page.click('button:has-text("Start over")');
+await page.setInputFiles('#file-upload', PDF);
+await page.waitForSelector('text=Mark the reading order', { timeout: 30000 });
+await page.click('button[aria-pressed]:has-text("Maths")');
+const pageBox = await page.locator('app-region-editor img').boundingBox();
+// The fixture's first formula, "v = u + at", sits about a fifth of the way down.
+await page.mouse.move(pageBox.x + pageBox.width * 0.1, pageBox.y + pageBox.height * 0.15);
+await page.mouse.down();
+await page.mouse.move(pageBox.x + pageBox.width * 0.7, pageBox.y + pageBox.height * 0.27, { steps: 5 });
+await page.mouse.up();
+await page.click('button:has-text("Read 1 box")');
+log(`waiting for results (1 box + ${PDF_PAGES - 1} whole pages)`);
+await page.waitForSelector('h1:has-text("Results")', { timeout: 420000 });
+const firstFormula = await page.locator('main pre code').first().textContent();
+check('boxed formula read first', /v\s*=\s*u\s*\+\s*a\s*t/.test(firstFormula ?? ''), firstFormula?.trim());
 
 // --- error path: unsupported file ---
 log('testing rejection of a non-image file');

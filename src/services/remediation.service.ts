@@ -1,7 +1,13 @@
 import { Injectable } from '@angular/core';
-import type { ApiErrorBody, RemediateRequest, RemediationResult } from '../shared/remediation.types.js';
+import { retryAfterMs } from '../retry-after.js';
+import type { ApiErrorBody, RegionKind, RemediateRequest, RemediationResult } from '../shared/remediation.types.js';
 
 export type { Formula, RemediationResult } from '../shared/remediation.types.js';
+
+export interface RemediateOptions {
+  /** Called before waiting out a rate limit, with the wait in whole seconds. */
+  onRateLimitWait?: (seconds: number) => void;
+}
 
 /**
  * Calls the backend proxy. The Gemini key lives on the server only — nothing
@@ -9,18 +15,30 @@ export type { Formula, RemediationResult } from '../shared/remediation.types.js'
  */
 @Injectable({ providedIn: 'root' })
 export class RemediationService {
-  async remediateImage(base64Image: string, mimeType: string): Promise<RemediationResult> {
-    const body: RemediateRequest = { image: base64Image, mimeType };
+  /**
+   * Reads one page, or one region of a page when `region` is given.
+   *
+   * A 429 is waited out and retried once. Region mode sends one request per
+   * box, so a fast local model can reach the server's per-minute limit on a
+   * single annotated upload; the server says how long to wait, and waiting
+   * beats failing the region.
+   */
+  async remediateImage(
+    base64Image: string,
+    mimeType: string,
+    region?: RegionKind,
+    options: RemediateOptions = {},
+  ): Promise<RemediationResult> {
+    const body: RemediateRequest = { image: base64Image, mimeType, ...(region ? { region } : {}) };
 
-    let response: Response;
-    try {
-      response = await fetch('/api/remediate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-    } catch (error) {
-      throw new Error('Could not reach the remediation server. Is it running?', { cause: error });
+    let response = await this.post(body);
+    if (response.status === 429) {
+      const wait = retryAfterMs(response.headers.get('Retry-After'));
+      if (wait !== null) {
+        options.onRateLimitWait?.(Math.ceil(wait / 1000));
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        response = await this.post(body);
+      }
     }
 
     if (!response.ok) {
@@ -45,5 +63,17 @@ export class RemediationService {
     }
 
     return (await response.json()) as RemediationResult;
+  }
+
+  private async post(body: RemediateRequest): Promise<Response> {
+    try {
+      return await fetch('/api/remediate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      throw new Error('Could not reach the remediation server. Is it running?', { cause: error });
+    }
   }
 }

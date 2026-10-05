@@ -1,0 +1,88 @@
+<div class="flex flex-wrap items-center gap-2" role="group" aria-label="Kind of box to draw">
+  <span class="font-bold mr-1">Draw as</span>
+  <button type="button" (click)="setKind('text')" [attr.aria-pressed]="kind() === 'text'"
+          class="btn-quiet" [class]="toggleClass('text')">
+    <span class="inline-block h-3 w-3 border-2 border-sky-600" aria-hidden="true"></span> Text <kbd class="hint font-mono">T</kbd>
+  </button>
+  <button type="button" (click)="setKind('math')" [attr.aria-pressed]="kind() === 'math'"
+          class="btn-quiet" [class]="toggleClass('math')">
+    <span class="inline-block h-3 w-3 border-2 border-dashed border-amber-600" aria-hidden="true"></span> Maths <kbd class="hint font-mono">M</kbd>
+  </button>
+  <button type="button" (click)="clear()" [disabled]="!regions().length" class="btn-text ml-auto">Clear page</button>
+</div>
+
+<div class="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem]">
+  <div class="relative self-start select-none rounded-sm border border-rule bg-panel">
+    <img [src]="pageUrl()" [alt]="pageLabel() + ' of the uploaded document'" class="block w-full h-auto" draggable="false">
+    <div #overlay
+         tabindex="-1"
+         class="absolute inset-0 touch-none outline-none"
+         [class.cursor-crosshair]="canAdd()"
+         [class.cursor-not-allowed]="!canAdd()"
+         (pointerdown)="onPointerDown($event)"
+         (pointermove)="onPointerMove($event)"
+         (pointerup)="onPointerUp($event)"
+         (pointercancel)="onPointerCancel()">
+      @for (region of regions(); track region.id; let i = $index) {
+        <div class="absolute border-2"
+             aria-hidden="true"
+             [style]="boxStyle(region)"
+             [class]="boxClass(region.kind, selectedId() === region.id)"
+             (pointerdown)="$event.stopPropagation(); select(region.id)">
+          <span class="absolute -top-px -left-px px-1 text-xs font-bold leading-5 text-white tabular-nums"
+                [class.bg-sky-600]="region.kind === 'text'"
+                [class.bg-amber-600]="region.kind === 'math'">{{ i + 1 }}{{ region.kind === 'text' ? ' T' : ' M' }}</span>
+        </div>
+      }
+      @if (draft(); as rect) {
+        <div class="absolute border-2 border-dotted pointer-events-none"
+             aria-hidden="true"
+             [style]="boxStyle(rect)"
+             [class.border-sky-600]="kind() === 'text'"
+             [class.border-amber-600]="kind() === 'math'"></div>
+      }
+    </div>
+  </div>
+
+  <section [attr.aria-label]="'Boxes on ' + pageLabel()">
+    <h3 class="font-bold">Reading order</h3>
+    <p class="hint mt-1">
+      Drag over the page to draw a box around each piece, in the order it should be read.
+      Drawing needs a mouse, pen or touch; this list does everything else from the keyboard.
+    </p>
+    @if (regions().length) {
+      <ol class="mt-3">
+        @for (region of regions(); track region.id; let i = $index; let first = $first; let last = $last) {
+          <li class="border-t border-rule py-2" (focusin)="select(region.id)"
+              [class.bg-accent-wash]="selectedId() === region.id">
+            <div class="flex items-center gap-2">
+              <span class="font-bold tabular-nums w-6">{{ i + 1 }}</span>
+              <button type="button" (click)="toggleKind(i)" class="btn-text"
+                      [attr.aria-label]="'Box ' + (i + 1) + ', ' + kindName(region.kind) + '. Change to ' + (region.kind === 'text' ? 'maths' : 'text')">
+                {{ region.kind === 'text' ? 'Text' : 'Maths' }}
+              </button>
+            </div>
+            <div class="flex flex-wrap gap-1 pl-8">
+              <button type="button" (click)="move(i, -1)" [disabled]="first" class="btn-text text-sm">
+                Up<span class="sr-only">, box {{ i + 1 }}</span>
+              </button>
+              <button type="button" (click)="move(i, 1)" [disabled]="last" class="btn-text text-sm">
+                Down<span class="sr-only">, box {{ i + 1 }}</span>
+              </button>
+              <button type="button" (click)="remove(i)" class="btn-text text-sm">
+                Delete<span class="sr-only"> box {{ i + 1 }}</span>
+              </button>
+            </div>
+          </li>
+        }
+      </ol>
+    } @else {
+      <p class="mt-3 text-ink-soft">No boxes yet. A page without boxes is read whole.</p>
+    }
+    @if (!canAdd()) {
+      <p class="mt-3 font-bold" role="status">This upload has reached its box limit.</p>
+    }
+  </section>
+</div>
+
+<p class="sr-only" role="status">{{ announcement() }}</p>

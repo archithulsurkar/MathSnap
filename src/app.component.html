@@ -204,14 +204,62 @@
           <div>
             <p class="font-bold">
               @if (progress(); as p) {
-                Reading page {{ p.current }} of {{ p.total }}…
+                @if (p.current > 0) {
+                  Reading {{ p.unit }} {{ p.current }} of {{ p.total }}…
+                } @else {
+                  Working on it…
+                }
               } @else {
                 Working on it…
               }
             </p>
-            <p class="hint">Dense pages and long PDFs take a little longer.</p>
+            <p class="hint">{{ rateLimitNote() || 'Dense pages and long PDFs take a little longer.' }}</p>
           </div>
         </div>
+      }
+      @case ('annotating') {
+        @let pageCount = pages().length;
+        @let pageLabel = 'Page ' + (currentPage() + 1) + (pageCount > 1 ? ' of ' + pageCount : '');
+        <h1 class="text-[1.75rem] font-bold leading-tight">Mark the reading order</h1>
+        <p class="mt-2 max-w-prose text-ink-soft">
+          Draw a box around each piece of text or maths, in the order it should be read. Each box is read on its own,
+          which helps most with handwriting. Typed pages usually read fine whole.
+        </p>
+
+        @if (notice()) {
+          <p class="mt-4 border-l-4 border-mark pl-4 py-1 max-w-prose" role="status">{{ notice() }}</p>
+        }
+
+        @if (pageCount > 1) {
+          <nav class="mt-6 flex items-center gap-2" aria-label="Pages">
+            <button type="button" (click)="goToPage(currentPage() - 1)" [disabled]="currentPage() === 0" class="btn-quiet">Previous page</button>
+            <p class="px-2 font-bold tabular-nums" aria-live="polite">{{ pageLabel }}</p>
+            <button type="button" (click)="goToPage(currentPage() + 1)" [disabled]="currentPage() === pageCount - 1" class="btn-quiet">Next page</button>
+          </nav>
+        }
+
+        <div class="mt-6">
+          <app-region-editor
+            [pageUrl]="pages()[currentPage()].dataUrl"
+            [pageLabel]="pageLabel"
+            [remaining]="regionsRemaining()"
+            [regions]="currentRegions()"
+            (regionsChange)="setCurrentRegions($event)" />
+        </div>
+
+        <div class="mt-8 flex flex-wrap items-center gap-2 border-t border-rule pt-6">
+          <button type="button" (click)="analyzeRegions()" [disabled]="!regionCount()" class="btn-primary">
+            Read {{ regionCount() }} {{ regionCount() === 1 ? 'box' : 'boxes' }}
+          </button>
+          <button type="button" (click)="analyzeWholePages()" class="btn-quiet">Analyze whole page instead</button>
+          <button type="button" (click)="reset()" class="btn-text">Start over</button>
+        </div>
+        @if (regionCount() && pagesWithoutBoxes()) {
+          <p class="hint mt-2">
+            {{ pagesWithoutBoxes() === 1 ? '1 page has' : pagesWithoutBoxes() + ' pages have' }} no boxes and will be read whole.
+          </p>
+        }
+        <p class="hint mt-2">Up to {{ regionsRemaining() + regionCount() }} boxes per upload, each read with its own request.</p>
       }
       @case ('error') {
         <div class="border-l-4 border-red-600 dark:border-red-400 pl-4 py-1">
@@ -226,7 +274,7 @@
           <div>
             <h1 class="text-[1.75rem] font-bold leading-tight">Results</h1>
             <p class="text-ink-soft">
-              {{ formulaViews().length }} {{ formulaViews().length === 1 ? 'formula' : 'formulas' }}@if (hasPages) { from {{ uploadedImages().length }} {{ uploadedImages().length === 1 ? 'page' : 'pages' }}}
+              {{ formulaCount() }} {{ formulaCount() === 1 ? 'formula' : 'formulas' }}@if (hasPages) { from {{ uploadedImages().length }} {{ uploadedImages().length === 1 ? 'page' : 'pages' }}}
               @if (saveStatus()) { <span role="status"> · {{ saveStatus() }}</span> }
             </p>
           </div>
@@ -240,10 +288,14 @@
           <p class="mt-6 border-l-4 border-mark pl-4 py-1 max-w-prose" role="status">{{ notice() }}</p>
         }
 
-        <ol class="mt-8">
-          @for (view of formulaViews(); track $index; let i = $index) {
+        <div class="mt-8">
+          @for (view of blockViews(); track $index) {
+            @if (view.kind === 'text') {
+            <div class="border-t border-rule py-7"><p class="max-w-prose whitespace-pre-wrap">@for (segment of view.segments; track $index) {@switch (segment.kind) {@case ('text') {{{ segment.text }}}@case ('math') {<span [innerHTML]="segment.safeMathml"></span>}@case ('code') {<code class="font-mono text-sm" [title]="'LaTeX that did not convert'">{{ segment.latex }}</code>}}}</p></div>
+            } @else {
             @let formula = view.formula;
-            <li class="border-t border-rule py-7">
+            @let i = view.number - 1;
+            <div class="border-t border-rule py-7">
               <h2 class="sr-only">Formula {{ i + 1 }}</h2>
 
               <div class="grid grid-cols-[1fr_auto] items-center gap-4">
@@ -281,9 +333,10 @@
                   Copy LaTeX<span class="sr-only"> for formula {{ i + 1 }}</span>
                 </button>
               </div>
-            </li>
+            </div>
+            }
           }
-        </ol>
+        </div>
 
         @if (hasPages) {
           <section class="border-t border-rule pt-8" aria-labelledby="pages-heading">
