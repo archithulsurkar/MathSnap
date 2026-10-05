@@ -45,9 +45,9 @@ Plan details live in [PLANS.md](PLANS.md). This file tracks what got done and wh
 - [ ] `e2e/ui.mjs`: click "Analyze whole page instead" after upload; add a draw-one-box-and-analyze step.
 - [ ] Manual check: handwritten photo with text/math/text boxes reordered; 2-page PDF with no boxes on page 2; whole-page fallback matches old behaviour.
 
-### Part 2: own model (later)
-- [ ] Data collection: log region crops with their LaTeX; add an in-app LaTeX correction step.
-- [ ] At ~2–5k corrected crops, fine-tune PosFormer/TAMER from MathWriting/HME100K weights on the RTX 5060.
-- [ ] Optional YOLOv8n region detector trained on saved boxes.
-- [ ] ONNX export as a new `RemediationProvider`, Gemini/Ollama as `auto` fallback.
+### Part 2: own model on the Mac Studio (see [TRAINING.md](TRAINING.md))
+- [ ] `eval/run.ts --predictions <jsonl>`, scored with `scoreFormula`.
+- [ ] ADR `docs/adr/0002-training-data.md`: dataset licences, research-only vs shippable weights.
+- [ ] Record the Mac Studio's chip (M2 Max or M3 Ultra) and size the stages after the stage 0 smoke run.
+- [ ] Data collection: opt-in region crop saving with their LaTeX; in-app LaTeX correction step (feeds stage 3).
 - [ ] Add a confidence / "verify" signal before trusting any handwriting output.
