@@ -146,10 +146,14 @@
             <p class="mt-4 font-bold text-accent" role="status">{{ providerNotice() }}</p>
           }
 
-          <button (click)="applyProvider()" [disabled]="providerBusy()" class="btn-primary mt-5">
-            {{ providerBusy() ? 'Checking…' : 'Use this backend' }}
-          </button>
-          <p class="hint mt-2">It’s tested before it’s used. A wrong key leaves the current backend running.</p>
+          @if (options.switchingAllowed === false) {
+            <p class="hint mt-5">This server’s backend is set by whoever runs it, so it can’t be changed here.</p>
+          } @else {
+            <button (click)="applyProvider()" [disabled]="providerBusy()" class="btn-primary mt-5">
+              {{ providerBusy() ? 'Checking…' : 'Use this backend' }}
+            </button>
+            <p class="hint mt-2">It’s tested before it’s used. A wrong key leaves the current backend running.</p>
+          }
         } @else {
           <div class="flex items-start justify-between gap-4">
             <h2 id="settings-heading" class="text-xl font-bold">No backend in this version</h2>

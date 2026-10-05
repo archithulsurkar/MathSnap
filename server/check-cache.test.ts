@@ -91,3 +91,36 @@ test('a rejected probe is not cached', async () => {
   assert.equal((await cache.run(probe)).ok, true);
   assert.equal(probes, 2);
 });
+
+test('concurrent callers share one probe in flight', async () => {
+  const { cache } = makeCache();
+  let probes = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const probe = async (): Promise<CheckResult> => {
+    probes++;
+    await gate;
+    return { ok: true, detail: 'ready' };
+  };
+
+  const pending = Array.from({ length: 20 }, () => cache.run(probe));
+  release();
+  const results = await Promise.all(pending);
+
+  assert.equal(probes, 1, 'a burst of health hits must not each reach upstream');
+  assert.ok(results.every((result) => result.detail === 'ready'));
+});
+
+test('a failed probe is not stuck in flight', async () => {
+  const { cache } = makeCache();
+  let probes = 0;
+  await assert.rejects(cache.run(async () => {
+    probes++;
+    throw new Error('boom');
+  }));
+  await cache.run(async () => {
+    probes++;
+    return { ok: true, detail: 'ready' };
+  });
+  assert.equal(probes, 2);
+});

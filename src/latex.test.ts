@@ -32,6 +32,21 @@ test('escapeLatex converts arrows, greek and subscripts in prose', () => {
   assert.equal(escapeLatex('ΔS is entropy'), '$\\Delta$S is entropy');
 });
 
+test('escapeLatex leaves nothing inputenc would reject', () => {
+  // Characters outside the original table that used to abort pdflatex.
+  const out = escapeLatex('x ∈ A ⊂ B, ∀ε ⇒ f′(x) … “so” — done ‘ok’ – 1');
+  assert.doesNotMatch(out, /[∈⊂∀⇒′…“”—‘’–]/, `unicode survived: ${out}`);
+  assert.equal(
+    out,
+    "x $\\in$ A $\\subset$ B, $\\forall$$\\epsilon$ $\\Rightarrow$ f$'$(x) \\ldots{} ``so'' --- done `ok' -- 1",
+  );
+});
+
+test('normalizeLatex converts set and logic symbols in formulas', () => {
+  assert.equal(toDisplayMath('x ∈ A ∪ B'), '\\[\nx \\in A \\cup B\n\\]');
+  assert.equal(toDisplayMath('f′(x)'), "\\[\nf'(x)\n\\]");
+});
+
 test('escapeLatex does not escape the dollars it adds for maths', () => {
   // Order matters: escaping after conversion would turn $\pm$ into \$\textbackslash{}pm\$.
   const out = escapeLatex('a ± b');

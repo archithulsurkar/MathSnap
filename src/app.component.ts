@@ -13,7 +13,13 @@ import { EXAMPLE_LATEX, remediateLatex } from './local-remediation';
 import { ProviderService, type ProviderOptions } from './services/provider.service';
 import { sanitizeMathml } from './mathml';
 import { latexToMathml } from './shared/latex-to-mathml';
-import { MAX_PDF_PAGES, MAX_REGIONS_PER_UPLOAD, type ContentBlock, type RegionKind } from './shared/remediation.types';
+import {
+  MAX_IMAGE_BYTES,
+  MAX_PDF_PAGES,
+  MAX_REGIONS_PER_UPLOAD,
+  type ContentBlock,
+  type RegionKind,
+} from './shared/remediation.types';
 import { enrichFormulas } from './shared/enrich';
 import { AuthService } from './services/auth.service';
 import { HistoryService } from './services/history.service';
@@ -731,7 +737,7 @@ export class AppComponent {
     if (!blocks.length) return;
 
     const latexContent = buildLatexDocument({ blocks, pageCount: this.uploadedImages().length });
-    const url = URL.createObjectURL(new Blob([latexContent], { type: 'text/latex' }));
+    const url = URL.createObjectURL(new Blob([latexContent], { type: 'application/x-tex' }));
     AppComponent.triggerDownload(url, 'remediated-document.tex');
     URL.revokeObjectURL(url);
   }
@@ -771,7 +777,53 @@ export class AppComponent {
       reader.onerror = () => reject(reader.error ?? new Error('Failed to read the file.'));
       reader.readAsDataURL(file);
     });
-    return { dataUrl, base64: dataUrl.split(',')[1], mimeType };
+    if (file.size <= MAX_IMAGE_BYTES) return { dataUrl, base64: dataUrl.split(',')[1], mimeType };
+
+    // A large phone photo: shrink it here rather than have the server refuse it.
+    const image = await AppComponent.loadImage(dataUrl);
+    return AppComponent.encodeWithinLimit(image, image.naturalWidth, image.naturalHeight, false);
+  }
+
+  /**
+   * Encodes an image so it fits the server's upload limit.
+   *
+   * Tries PNG first when asked (crisp strokes for rendered PDFs), then JPEG,
+   * then JPEG at smaller sizes. Without this an oversized page reached the
+   * server, was refused, and showed up only as "couldn't be read".
+   */
+  private static encodeWithinLimit(
+    source: CanvasImageSource,
+    width: number,
+    height: number,
+    tryPng: boolean,
+  ): PageImage {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Could not create a canvas to prepare the image.');
+
+    const encode = (scale: number, mimeType: 'image/png' | 'image/jpeg'): PageImage => {
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      // JPEG has no transparency; paint white so transparent areas don't turn black.
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(source, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL(mimeType, 0.9);
+      return { dataUrl, base64: dataUrl.split(',')[1], mimeType };
+    };
+    const fits = (page: PageImage) => (page.base64.length * 3) / 4 <= MAX_IMAGE_BYTES;
+
+    if (tryPng) {
+      const png = encode(1, 'image/png');
+      if (fits(png)) return png;
+    }
+    let scale = 1;
+    let jpeg = encode(scale, 'image/jpeg');
+    while (!fits(jpeg) && scale > 0.2) {
+      scale *= 0.75;
+      jpeg = encode(scale, 'image/jpeg');
+    }
+    return jpeg;
   }
 
   /**
@@ -825,9 +877,9 @@ export class AppComponent {
 
       await page.render({ canvas, viewport }).promise;
 
-      // PNG keeps formula strokes crisp; JPEG artifacts confuse small subscripts.
-      const dataUrl = canvas.toDataURL('image/png');
-      return { dataUrl, base64: dataUrl.split(',')[1], mimeType: 'image/png' };
+      // PNG keeps formula strokes crisp; JPEG artifacts confuse small subscripts,
+      // so JPEG is only the fallback for a page too dense to fit as PNG.
+      return AppComponent.encodeWithinLimit(canvas, canvas.width, canvas.height, true);
     } finally {
       page.cleanup();
     }

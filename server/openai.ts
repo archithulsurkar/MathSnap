@@ -126,37 +126,41 @@ export class OpenAIProvider implements RemediationProvider {
         const waited = await this.pacer.wait();
         if (waited > 0) console.log(`Pacing: held request ${Math.round(waited / 1000)}s for the RPM limit`);
 
-        let response: Response;
-        try {
-          response = await fetch(`${this.baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${this.apiKey}`,
-            },
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(this.timeoutMs),
-          });
-        } catch (error) {
-          const reason =
-            (error as Error).name === 'TimeoutError'
-              ? `The model did not respond within ${Math.round(this.timeoutMs / 1000)}s.`
-              : `Could not reach ${this.baseUrl}.`;
-          throw new UpstreamError(reason, 502, { cause: error });
+        const send = async (): Promise<Response> => {
+          try {
+            return await fetch(`${this.baseUrl}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${this.apiKey}`,
+              },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(this.timeoutMs),
+            });
+          } catch (error) {
+            const reason =
+              (error as Error).name === 'TimeoutError'
+                ? `The model did not respond within ${Math.round(this.timeoutMs / 1000)}s.`
+                : `Could not reach ${this.baseUrl}.`;
+            throw new UpstreamError(reason, 502, { cause: error });
+          }
+        };
+
+        let response = await send();
+        let detail = response.ok ? '' : await response.text().catch(() => '');
+
+        // Some models accept only the default temperature. Drop it and resend
+        // at once, rather than forcing every caller to know which ones or
+        // spending one of withRetry's attempts and a backoff on it.
+        if (response.status === 400 && /temperature/i.test(detail) && this.supportsTemperature) {
+          this.supportsTemperature = false;
+          delete body.temperature;
+          console.warn(`${this.model} rejects a custom temperature; resending with the default.`);
+          response = await send();
+          detail = response.ok ? '' : await response.text().catch(() => '');
         }
 
         if (!response.ok) {
-          const detail = await response.text().catch(() => '');
-
-          // Some models accept only the default temperature. Drop it and retry
-          // rather than forcing every caller to know which ones.
-          if (response.status === 400 && /temperature/i.test(detail) && this.supportsTemperature) {
-            this.supportsTemperature = false;
-            delete body.temperature;
-            console.warn(`${this.model} rejects a custom temperature; retrying with the default.`);
-            throw Object.assign(new Error('retry without temperature'), { status: 503 });
-          }
-
           // Tag the status so withRetry can classify it, and keep any Retry-After.
           const retryAfter = response.headers.get('retry-after');
           throw Object.assign(

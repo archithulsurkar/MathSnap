@@ -30,6 +30,8 @@ export interface ProviderOptions {
   presets: ProviderPreset[];
   active: ActiveProvider;
   customUrlAllowed: boolean;
+  /** False on a shared server that has turned runtime switching off. Absent on older servers. */
+  switchingAllowed?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })

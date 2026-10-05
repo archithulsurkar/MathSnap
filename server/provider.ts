@@ -45,22 +45,32 @@ export interface RemediationProvider {
  */
 export class CheckCache {
   private entry?: { at: number; result: CheckResult };
+  /**
+   * The probe currently running, shared by every caller that arrives before it
+   * settles. Caching only settled results would let a burst of concurrent
+   * requests each reach upstream — the amplification this class prevents.
+   */
+  private inFlight?: Promise<CheckResult>;
 
   constructor(
     private readonly ttlMs = 60_000,
     private readonly now: () => number = Date.now,
   ) {}
 
-  async run(probe: () => Promise<CheckResult>): Promise<CheckResult> {
+  run(probe: () => Promise<CheckResult>): Promise<CheckResult> {
     if (this.entry && this.now() - this.entry.at < this.ttlMs) {
-      return this.entry.result;
+      return Promise.resolve(this.entry.result);
     }
 
-    const result = await probe();
-    if (result.cache !== false) {
-      this.entry = { at: this.now(), result };
-    }
-    return result;
+    this.inFlight ??= probe()
+      .then((result) => {
+        if (result.cache !== false) this.entry = { at: this.now(), result };
+        return result;
+      })
+      .finally(() => {
+        this.inFlight = undefined;
+      });
+    return this.inFlight;
   }
 }
 

@@ -51,6 +51,61 @@ const SYMBOLS: Record<string, string> = {
   'Ω': '\\Omega ',
   'Φ': '\\Phi ',
   'Θ': '\\Theta ',
+  'Γ': '\\Gamma ',
+  'Λ': '\\Lambda ',
+  'Π': '\\Pi ',
+  'Ψ': '\\Psi ',
+  'ζ': '\\zeta ',
+  'η': '\\eta ',
+  'κ': '\\kappa ',
+  'ν': '\\nu ',
+  'ξ': '\\xi ',
+  'χ': '\\chi ',
+  'ψ': '\\psi ',
+  '∈': '\\in ',
+  '∉': '\\notin ',
+  '⊂': '\\subset ',
+  '⊆': '\\subseteq ',
+  '⊃': '\\supset ',
+  '⊇': '\\supseteq ',
+  '∪': '\\cup ',
+  '∩': '\\cap ',
+  '∅': '\\emptyset ',
+  '∀': '\\forall ',
+  '∃': '\\exists ',
+  '¬': '\\neg ',
+  '∧': '\\wedge ',
+  '∨': '\\vee ',
+  '⇒': '\\Rightarrow ',
+  '⇐': '\\Leftarrow ',
+  '⇔': '\\Leftrightarrow ',
+  '↔': '\\leftrightarrow ',
+  '↦': '\\mapsto ',
+  '≪': '\\ll ',
+  '≫': '\\gg ',
+  '∼': '\\sim ',
+  '≅': '\\cong ',
+  '⊥': '\\perp ',
+  '∠': '\\angle ',
+  '∘': '\\circ ',
+  '′': "'",
+  '″': "''",
+};
+
+/**
+ * Typographic punctuation in prose. Not maths, so it never enters a formula;
+ * but `inputenc` has no definition for these either, and one of them aborts
+ * the whole `.tex` build.
+ */
+const TEXT_PUNCTUATION: Record<string, string> = {
+  '…': '\\ldots{}',
+  '—': '---',
+  '–': '--',
+  '“': '``',
+  '”': "''",
+  '‘': '`',
+  '’': "'",
+  ' ': '~',
 };
 
 const SUPERSCRIPTS: Record<string, string> = {
@@ -202,6 +257,10 @@ export function unicodeToTextLatex(text: string): string {
 
   out = textScriptRuns(out, SUPERSCRIPTS, 'textsuperscript');
   out = textScriptRuns(out, SUBSCRIPTS, 'textsubscript');
+
+  for (const [mark, replacement] of Object.entries(TEXT_PUNCTUATION)) {
+    out = out.split(mark).join(replacement);
+  }
 
   return out;
 }

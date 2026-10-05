@@ -14,6 +14,8 @@ import {
 } from './active-provider.js';
 import { PROVIDER_PRESETS, customUrlAllowed } from './provider-presets.js';
 import { RateLimiter } from './rate-limit.js';
+import { retryBudgetMs } from './retry.js';
+import { parseTrustProxy } from './trust-proxy.js';
 import {
   ACCEPTED_IMAGE_TYPES,
   MAX_IMAGE_BYTES,
@@ -57,8 +59,23 @@ function decodedByteLength(base64: string): number {
 /** Set once listening; the provider endpoint retimes it after a switch. */
 let activeServer: import('node:http').Server | undefined;
 
+/**
+ * `POST /api/provider` swaps the backend for every client of this server and
+ * has no authentication: right for the single-user local app, wrong for a
+ * shared deployment, which sets `PROVIDER_SWITCHING=off`.
+ */
+const PROVIDER_SWITCHING_ALLOWED = process.env.PROVIDER_SWITCHING?.trim().toLowerCase() !== 'off';
+
+/** A request can run every retry attempt, so its timeout must cover them all. */
+function requestTimeoutFor(provider: { timeoutMs: number }): number {
+  return retryBudgetMs(provider.timeoutMs) + 30_000;
+}
+
 const app = express();
 app.disable('x-powered-by');
+
+const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
+if (trustProxy !== undefined) app.set('trust proxy', trustProxy);
 app.use(express.json({ limit: JSON_LIMIT }));
 
 app.get('/api/health', async (_req, res) => {
@@ -73,6 +90,7 @@ app.get('/api/providers', (_req, res) => {
     presets: PROVIDER_PRESETS,
     active: getProviderState(),
     customUrlAllowed: customUrlAllowed(),
+    switchingAllowed: PROVIDER_SWITCHING_ALLOWED,
   });
 });
 
@@ -84,7 +102,14 @@ app.get('/api/providers', (_req, res) => {
  * memory only and never echoed back.
  */
 app.post('/api/provider', async (req, res) => {
+  if (!PROVIDER_SWITCHING_ALLOWED) {
+    return res
+      .status(403)
+      .json({ error: 'This server does not allow changing the model backend.', code: 'forbidden' });
+  }
+
   const limit = limiter.check(req.ip ?? 'unknown');
+  res.set('X-RateLimit-Remaining', String(limit.remaining));
   if (!limit.allowed) {
     res.set('Retry-After', String(limit.retryAfterSeconds));
     return res.status(429).json({ error: `Too many requests. Try again in ${limit.retryAfterSeconds}s.`, code: 'rate_limited' });
@@ -104,7 +129,7 @@ app.post('/api/provider', async (req, res) => {
     });
 
     // A slow local model and a fast hosted one need different allowances.
-    if (activeServer) activeServer.requestTimeout = getActiveProvider().timeoutMs + 30_000;
+    if (activeServer) activeServer.requestTimeout = requestTimeoutFor(getActiveProvider());
     console.log(`Provider switched to ${state.name} (${state.model})`);
     res.json({ active: state, detail: check.detail });
   } catch (error) {
@@ -120,6 +145,8 @@ app.post('/api/remediate', async (req, res) => {
   const fail = (status: number, body: ApiErrorBody) => res.status(status).json(body);
 
   const limit = limiter.check(req.ip ?? 'unknown');
+  // Lets a client pace a run of region requests before it hits the limit.
+  res.set('X-RateLimit-Remaining', String(limit.remaining));
   if (!limit.allowed) {
     res.set('Retry-After', String(limit.retryAfterSeconds));
     return fail(429, {
@@ -140,7 +167,9 @@ app.post('/api/remediate', async (req, res) => {
   if (!(ACCEPTED_IMAGE_TYPES as readonly string[]).includes(mimeType)) {
     return fail(400, { error: `Unsupported mime type: ${mimeType}`, code: 'unsupported_type' });
   }
-  if (!BASE64_RE.test(image)) {
+  // Padded base64 always comes in groups of four; anything else is truncated
+  // or malformed, and would make the decoded size below fractional.
+  if (!BASE64_RE.test(image) || image.length % 4 !== 0) {
     return fail(400, { error: '`image` must be raw base64 without a data URL prefix.', code: 'bad_request' });
   }
   if (decodedByteLength(image) > MAX_IMAGE_BYTES) {
@@ -199,7 +228,7 @@ async function main(): Promise<void> {
   // local vision model can take minutes per page, while a hosted one should not be
   // governed by the local model's much longer allowance. It stays finite — 0 would
   // mean "never", which hands any client an unbounded open connection.
-  server.requestTimeout = provider.timeoutMs + 30_000;
+  server.requestTimeout = requestTimeoutFor(provider);
   activeServer = server;
 
   // Headers arrive quickly no matter how slow generation is, so this keeps its

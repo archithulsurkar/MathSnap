@@ -12,6 +12,23 @@ only what has shipped.
 
 ### Added
 
+- Reading-order boxes. After upload, the page is shown for annotation: draw a
+  box around each piece of text or maths in the order it should be read, mark
+  it Text or Maths (`T`/`M`), and reorder or delete boxes from a list that works
+  from the keyboard. Each box is cropped at full resolution and read on its own
+  with a prompt for its kind, which helps most with handwriting. Results and
+  both exports follow the drawn order; pages without boxes are read whole, and
+  "Analyze whole page instead" keeps the previous behaviour.
+- Inline maths in text. A text box comes back with `$...$` maths inside it,
+  shown and exported to HTML as MathML, and kept as maths in the `.tex`.
+- `npm run eval -- --predictions <file>` scores answers produced elsewhere (one
+  JSON object per line) with the same metric, so a locally trained model can be
+  compared with the hosted backends.
+- `npm run test:e2e:regions`: a browser check of the box flow against a fake
+  backend, needing no model.
+- `TRUST_PROXY` and `PROVIDER_SWITCHING=off` for hosted deployments, and an
+  `X-RateLimit-Remaining` header on rate-limited endpoints.
+
 - Optional accounts, by emailed magic link (Supabase Auth). Signed out, every
   feature still works; signed in, each result is saved to a personal history
   that can be reopened or deleted. Only the LaTeX and page text are stored:
@@ -34,6 +51,31 @@ only what has shipped.
 - The export keeps the original text's layout (line breaks, blank lines,
   indentation) instead of reflowing it into paragraphs, and the prompt asks the
   model to transcribe that layout exactly, without reflowing or correcting it.
+- The results page now shows the transcribed text as well as the formulas.
+- The `.tex` export has one Content section in reading order instead of
+  separate text and formula sections, and no longer repeats each formula's
+  spoken description. It is saved as `application/x-tex`.
+- The HTML export has one Content section in reading order.
+- The request timeout covers every retry attempt, so a slow retried request
+  gets the error message it should rather than a dropped connection.
+
+### Fixed
+
+- The model prompt lost its LaTeX backslashes: the model was shown `pm` for
+  `\pm`, and a tab or carriage return in place of `\t` and `\r` in `\times` and
+  `\rightarrow`.
+- Timeouts, unreachable hosts and missing keys were retried three times.
+- Concurrent `/api/health` requests each reached the upstream provider.
+- Common maths symbols (`∈ ⊂ ∀ ⇒ ′`) and typographic punctuation
+  (`… — – “ ” ‘ ’`) in transcribed text aborted the `.tex` build.
+- A page or photo over the 8MB upload limit failed as "couldn't be read"; it is
+  now re-encoded to fit before sending.
+- Base64 whose length is not a multiple of four is rejected instead of being
+  measured as a fractional size.
+- A model that rejects a custom temperature no longer spends a retry and a
+  backoff before the request is resent without it.
+- The compile check reported every pdflatex failure as "unknown error" on
+  Windows, and compiled its own copy of the export rather than the app's.
 
 ## [0.3.0] - 2026-09-27
 

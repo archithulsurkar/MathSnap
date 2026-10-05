@@ -30,6 +30,12 @@ export function isExhaustedForToday(error: unknown): boolean {
 }
 
 export function isRetryable(error: unknown): boolean {
+  // An UpstreamError is a verdict already worded for the user — a timeout, an
+  // unreachable host, a missing key. Its status is for the HTTP reply, not a
+  // sign that trying again will help. Matched by name to keep this module free
+  // of the provider code.
+  if (error instanceof Error && error.name === 'UpstreamError') return false;
+
   const status = (error as { status?: number })?.status;
   if (typeof status !== 'number' || !RETRYABLE_STATUSES.has(status)) return false;
   return !isExhaustedForToday(error);
@@ -59,6 +65,18 @@ export function serverRequestedDelayMs(error: unknown): number | undefined {
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const DEFAULT_ATTEMPTS = 3;
+
+/**
+ * The longest `withRetry` can take when every attempt runs to its timeout and
+ * every wait is the longest a server may ask for. The HTTP request timeout has
+ * to cover this, or the socket is torn down mid-retry and the client gets a
+ * dropped connection instead of the error it knows how to show.
+ */
+export function retryBudgetMs(attemptTimeoutMs: number, attempts: number = DEFAULT_ATTEMPTS): number {
+  return attempts * attemptTimeoutMs + (attempts - 1) * MAX_SERVER_DELAY_MS;
+}
+
 /**
  * Retries a call while it fails with a transient status.
  *
@@ -66,7 +84,7 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
  * quota is spent; without this a single blip drops a whole PDF page.
  */
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
-  const { attempts = 3, baseDelayMs = 500, sleep = defaultSleep, onRetry } = options;
+  const { attempts = DEFAULT_ATTEMPTS, baseDelayMs = 500, sleep = defaultSleep, onRetry } = options;
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {

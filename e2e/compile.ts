@@ -8,7 +8,6 @@
  *   npm run test:compile
  */
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -69,7 +68,8 @@ try {
   });
 } catch {
   const log = fs.readFileSync(path.join(OUT, 'export.log'), 'latin1');
-  const failure = log.split(os.EOL).find((line) => line.startsWith('!')) ?? 'unknown error';
+  // pdflatex writes \n line endings even on Windows, so os.EOL would never split.
+  const failure = log.split(/\r?\n/).find((line) => line.startsWith('!')) ?? 'unknown error';
   console.error(`FAIL: the exported .tex does not compile — ${failure.trim()}`);
   console.error(`Full log: ${path.join(OUT, 'export.log')}`);
   process.exit(1);

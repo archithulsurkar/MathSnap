@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isExhaustedForToday, isRetryable, serverRequestedDelayMs, withRetry } from './retry.js';
+import { isExhaustedForToday, isRetryable, retryBudgetMs, serverRequestedDelayMs, withRetry } from './retry.js';
 
 /** Abridged from a real Gemini free-tier 429 (quota: 5 requests/minute). */
 const QUOTA_429 = Object.assign(
@@ -182,4 +182,29 @@ test('does not retry once the daily quota is gone', async () => {
     ),
   );
   assert.equal(calls, 1, 'retrying a per-day cap wastes ~96s per page to fail anyway');
+});
+
+test('does not retry an UpstreamError, whatever its status', async () => {
+  const timeout = Object.assign(new Error('The model did not respond within 60s.'), {
+    name: 'UpstreamError',
+    status: 502,
+  });
+  assert.equal(isRetryable(timeout), false);
+
+  let calls = 0;
+  await assert.rejects(
+    withRetry(
+      async () => {
+        calls++;
+        throw timeout;
+      },
+      { sleep: noSleep },
+    ),
+  );
+  assert.equal(calls, 1, 'a timeout retried three times triples the wait for the same failure');
+});
+
+test('the retry budget covers every attempt and the longest waits between them', () => {
+  assert.equal(retryBudgetMs(60_000), 3 * 60_000 + 2 * 90_000);
+  assert.equal(retryBudgetMs(10_000, 1), 10_000);
 });
