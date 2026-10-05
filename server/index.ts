@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { enrichFormula } from '../src/shared/enrich.js';
 import { fileURLToPath } from 'node:url';
-import { UpstreamError } from './provider.js';
+import { UpstreamError, parseRegion } from './provider.js';
 import { resolveProvider } from './providers.js';
 import {
   ProviderConfigError,
@@ -133,6 +133,10 @@ app.post('/api/remediate', async (req, res) => {
   if (typeof image !== 'string' || !image || typeof mimeType !== 'string') {
     return fail(400, { error: 'Request must include `image` and `mimeType`.', code: 'bad_request' });
   }
+  const parsedRegion = parseRegion((req.body as Record<string, unknown>).region);
+  if (!parsedRegion) {
+    return fail(400, { error: '`region` must be "text", "math" or absent.', code: 'bad_request' });
+  }
   if (!(ACCEPTED_IMAGE_TYPES as readonly string[]).includes(mimeType)) {
     return fail(400, { error: `Unsupported mime type: ${mimeType}`, code: 'unsupported_type' });
   }
@@ -147,7 +151,7 @@ app.post('/api/remediate', async (req, res) => {
   }
 
   try {
-    res.json(await getActiveProvider().remediateImage(image, mimeType));
+    res.json(await getActiveProvider().remediateImage(image, mimeType, parsedRegion.region));
   } catch (error) {
     if (error instanceof UpstreamError) {
       console.error('Remediation failed:', error.message, error.cause ?? '');

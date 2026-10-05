@@ -1,11 +1,11 @@
 # LaTeX-mini plans
 
 1. **Part 1: Manual reading-order region tool.** Build now.
-2. **Part 2: Own model on <4GB VRAM.** Feasibility notes and roadmap for later.
+2. **Part 2: Own model, trained on the Mac Studio (96GB).** Full plan in [TRAINING.md](TRAINING.md); summary below.
 
 ## Status (2026-10-05)
-- Part 1 has been started and paused. The work in progress is in `git stash` on branch `feat/region-reading-order` ("region tool WIP"), and `git stash pop` resumes it. It contains: the server prompts and `promptFor`, `region` validation, the `regions.ts` / `inline-math.ts` / `blocks.ts` helpers, `buildLatexDocument`, and tests (102 passing). The UI (sections 2, 3 and 6) has not been started. temml is not added yet.
-- **Bug found in the existing code:** `PROMPT` in `server/provider.ts` is a template literal written with single backslashes, so the model receives `\pm` as `pm`, `\times` as a TAB followed by `imes`, and `\rightarrow` as a carriage return. The WIP fixes this. If the region tool stays on hold, fix it separately by doubling the backslashes.
+- The repo was re-created today, and the old stash with the Part 1 work in progress was lost. Part 1 is being rebuilt on `feat/region-reading-order`. Done so far: shared types and the server side (section 4 and 5). temml is already a dependency.
+- The `PROMPT` backslash bug (the model got `\pm` as `pm`, `\times` as TAB + `imes`) is fixed: the prompts use `String.raw`.
 - If you write files through the Bash tool (heredocs, python `-`), `\\` collapses to `\`. Make edits that contain backslashes with the Edit or Write tool instead.
 
 ---
@@ -88,19 +88,21 @@ New: upload → **annotate** (new status) → analyze regions in order → resul
 
 ---
 
-# Part 2: Own model on <4GB VRAM (later)
+# Part 2: Own model, trained on the Mac Studio (later)
 
-## Verdict
-- Training a vision LLM (Qwen2.5-VL class) from scratch or with QLoRA in <4GB: **no**, it needs about 10–20GB.
-- Training a small specialist pipeline in <4GB: **yes**. VRAM is not the bottleneck; **data is**.
-- The most common dedicated GPU now has 8GB (3060/4060 class); 4GB is the low end.
-- Training VRAM and inference VRAM are separate questions. Only you train, on the RTX 5060 (8GB, sm_120, which needs PyTorch built for CUDA 12.8 or newer). Users run inference only, which is a few hundred MB and works on CPU.
-- Speech is not needed: NVDA/JAWS read MathML directly. The model's only job is to output LaTeX; LaTeX→MathML is deterministic (temml).
+Full plan: [TRAINING.md](TRAINING.md). This replaces the earlier idea of a small handwriting-only model (PosFormer/TAMER) trained on the RTX 5060.
 
-## Pipeline
-```
-page img → (manual boxes from Part 1, later a detector) → crop → HMER model → LaTeX → temml → MathML → NVDA/JAWS
-```
+## Summary
+- **One model** for text and math, printed and handwritten, crops and whole pages: a small vision-language model (Qwen-VL class, likely 3–4B), fine-tuned with LoRA.
+- **Training:** Mac Studio, 96GB unified memory, `mlx-vlm`, base model in bf16. Public data and pretrained weights only, since there are no note photos of our own yet.
+- **Shipping:** quantized to Q4 GGUF and run through the existing `ollama` provider, returning the app's JSON shape, so the app needs no new provider code. It must run in ≤4GB for end users; a 7B can ship only as an opt-in "large" model.
+- Speech is not needed: NVDA/JAWS read MathML directly. The model's only job is text and LaTeX; LaTeX→MathML is deterministic (temml).
+
+## Repo-side prerequisites
+1. Done: fix the `PROMPT` backslash bug.
+2. Done: `promptFor(region)` with `TEXT_REGION_PROMPT` / `MATH_REGION_PROMPT`. Training uses all three prompts verbatim.
+3. `eval/run.ts --predictions <jsonl>`, so the Python side is scored with the app's own metric.
+4. ADR `docs/adr/0002-training-data.md` on dataset licences (MathWriting is CC BY-NC-SA; IAM and CROHME are research-only; UniMER-1M is unclear). It decides whether the weights are research-only or shippable.
 
 ## Handwriting reality
 | | Printed | Handwritten |
@@ -108,20 +110,19 @@ page img → (manual boxes from Part 1, later a detector) → crop → HMER mode
 | Small models | pix2tex, UniMERNet | CoMER, PosFormer, TAMER, ICAL (~6–10M params) |
 | Public data | millions | CROHME (~10k), HME100K (~100k), MathWriting (~230k real + 400k synthetic) |
 | Best exact-match accuracy | ~90%+ | ~60–65% on CROHME, single clean expressions only |
-| VRAM to train | 2–4GB | 2–4GB |
 
 Professor notes are harder than these benchmarks:
 - Multi-line derivations, arrows, cross-outs, math mixed into prose.
 - Each professor's handwriting is its own domain.
 - Photo artifacts: skew, shadows, lined paper.
 
-## Roadmap: distillation, not training from scratch
-1. Keep Gemini/Qwen as the main provider.
-2. **Data collection:** log every region crop together with its LaTeX, and add an in-app LaTeX correction step. Part 1's boxes already produce clean, labelled crops.
-3. Once there are about 2–5k corrected crops, fine-tune PosFormer/TAMER, starting from MathWriting/HME100K weights. That fits in 4GB; expect about a day on the 5060.
-4. Optionally train a detector (YOLOv8n) on the saved boxes to suggest regions automatically. It needs about 2GB.
-5. Export to ONNX and add it as a new provider behind `RemediationProvider` (`server/provider.ts`), with Gemini/Ollama kept as the fallback in `auto`.
-6. Compare against Gemini on a held-out set of your own notes, and switch to the local model only for cases where it matches Gemini.
+Public benchmarks don't capture this, which is why the training plan's stage 3 adapts the model to our own notes.
+
+## Roadmap
+1. Keep Gemini/Qwen as the main provider meanwhile.
+2. Stages 0–2 on the Mac Studio (smoke run, crops, then pages and noise) once prerequisites 3 and 4 are done. Rough guess: 1–2 days of wall-clock time for a 3–4B.
+3. **Data collection:** Part 1's boxes produce clean, labelled crops. Add opt-in crop saving and an in-app LaTeX correction step; those feed stage 3.
+4. Make the local model the default in `auto` only per category where it matches Gemini on the eval set; hosted models stay as the fallback.
 
 ## Accessibility risk
 Wrong math read out confidently to a blind student is worse than no math. Whichever model you use, show a confidence signal or a "verify" flag. Handwriting will produce more errors.

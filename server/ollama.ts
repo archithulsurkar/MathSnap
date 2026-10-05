@@ -1,12 +1,12 @@
 import { withRetry } from './retry.js';
 import {
-  PROMPT,
   RESPONSE_JSON_SCHEMA,
   UpstreamError,
   parseModelJson,
+  promptFor,
   type RemediationProvider,
 } from './provider.js';
-import type { RemediationResult } from '../src/shared/remediation.types.js';
+import type { RegionKind, RemediationResult } from '../src/shared/remediation.types.js';
 
 const DEFAULT_HOST = 'http://127.0.0.1:11434';
 const DEFAULT_MODEL = 'qwen2.5vl:7b';
@@ -81,7 +81,11 @@ export class OllamaProvider implements RemediationProvider {
   }
 
   /** `mimeType` is unused: Ollama sniffs the image format from the bytes itself. */
-  async remediateImage(base64Image: string, mimeType: string): Promise<RemediationResult> {
+  async remediateImage(
+    base64Image: string,
+    mimeType: string,
+    region?: RegionKind,
+  ): Promise<RemediationResult> {
     void mimeType;
 
     const body = {
@@ -93,7 +97,7 @@ export class OllamaProvider implements RemediationProvider {
         temperature: 0.1,
         num_ctx: Number(process.env.OLLAMA_NUM_CTX ?? DEFAULT_NUM_CTX),
       },
-      messages: [{ role: 'user', content: PROMPT, images: [base64Image] }],
+      messages: [{ role: 'user', content: promptFor(region), images: [base64Image] }],
     };
 
     const response = await withRetry(

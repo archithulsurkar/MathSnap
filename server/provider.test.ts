@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { UpstreamError, isModelResult, parseModelJson } from './provider.js';
+import {
+  MATH_REGION_PROMPT,
+  PROMPT,
+  TEXT_REGION_PROMPT,
+  UpstreamError,
+  isModelResult,
+  parseModelJson,
+  parseRegion,
+  promptFor,
+} from './provider.js';
 
 /** What the model is now asked for: a transcription and LaTeX, nothing else. */
 const VALID = {
@@ -109,4 +118,42 @@ test('isModelResult guards each field', () => {
   assert.equal(isModelResult({ originalText: 1, formulas: [] }), false);
   assert.equal(isModelResult({ originalText: '', formulas: [{}] }), false);
   assert.equal(isModelResult({ originalText: '', formulas: [] }), true);
+});
+
+test('every prompt keeps the backslashes on its LaTeX examples', () => {
+  for (const prompt of [PROMPT, TEXT_REGION_PROMPT, MATH_REGION_PROMPT]) {
+    for (const command of ['\\pm', '\\sqrt{', '\\times', '\\rightarrow', '\\Delta', '\\leq', '\\frac{']) {
+      assert.ok(prompt.includes(command), `prompt should contain ${command}`);
+    }
+    assert.ok(!/[\t\r]/.test(prompt), 'prompt should not contain TAB or CR');
+    assert.ok(!prompt.includes('${'), 'prompt should have no unfilled placeholder');
+  }
+});
+
+test('promptFor picks the whole-page prompt or the one for the region kind', () => {
+  assert.equal(promptFor(), PROMPT);
+  assert.equal(promptFor('text'), TEXT_REGION_PROMPT);
+  assert.equal(promptFor('math'), MATH_REGION_PROMPT);
+});
+
+test('the text region prompt asks for inline $...$ maths and no formulas', () => {
+  assert.match(TEXT_REGION_PROMPT, /single dollar signs/);
+  assert.match(TEXT_REGION_PROMPT, /empty array for "formulas"/);
+});
+
+test('the math region prompt asks for one formula with lines joined by \\\\', () => {
+  assert.ok(MATH_REGION_PROMPT.includes('Join separate lines with \\\\ '));
+  assert.match(MATH_REGION_PROMPT, /empty string for "originalText"/);
+});
+
+test('parseRegion accepts absent, text and math', () => {
+  assert.deepEqual(parseRegion(undefined), { region: undefined });
+  assert.deepEqual(parseRegion('text'), { region: 'text' });
+  assert.deepEqual(parseRegion('math'), { region: 'math' });
+});
+
+test('parseRegion rejects anything else', () => {
+  for (const bad of [null, '', 'Text', 'image', 1, true, ['math'], { kind: 'math' }]) {
+    assert.equal(parseRegion(bad), null, `should reject ${JSON.stringify(bad)}`);
+  }
 });

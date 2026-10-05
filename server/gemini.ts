@@ -3,14 +3,14 @@ import { Pacer } from './pace.js';
 import { isExhaustedForToday, withRetry } from './retry.js';
 import {
   CheckCache,
-  PROMPT,
   RESPONSE_JSON_SCHEMA,
   UpstreamError,
   parseModelJson,
+  promptFor,
   type CheckResult,
   type RemediationProvider,
 } from './provider.js';
-import type { RemediationResult } from '../src/shared/remediation.types.js';
+import type { RegionKind, RemediationResult } from '../src/shared/remediation.types.js';
 
 const DEFAULT_MODEL = 'gemini-3.7-flash';
 
@@ -107,7 +107,11 @@ export class GeminiProvider implements RemediationProvider {
     return this.client;
   }
 
-  async remediateImage(base64Image: string, mimeType: string): Promise<RemediationResult> {
+  async remediateImage(
+    base64Image: string,
+    mimeType: string,
+    region?: RegionKind,
+  ): Promise<RemediationResult> {
     let response;
     try {
       response = await withRetry(
@@ -120,7 +124,7 @@ export class GeminiProvider implements RemediationProvider {
           return this.getClient().models.generateContent({
             model: this.model,
             contents: {
-              parts: [{ text: PROMPT }, { inlineData: { data: base64Image, mimeType } }],
+              parts: [{ text: promptFor(region) }, { inlineData: { data: base64Image, mimeType } }],
             },
             config: {
               responseMimeType: 'application/json',
