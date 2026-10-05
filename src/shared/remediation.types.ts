@@ -33,11 +33,33 @@ export interface RemediationResult {
   formulas: Formula[];
 }
 
+/**
+ * What a cropped region holds. A region is read with a prompt for that one
+ * kind, so the model sees a single small piece of the page.
+ */
+export type RegionKind = 'text' | 'math';
+
+export const REGION_KINDS: readonly RegionKind[] = ['text', 'math'];
+
 export interface RemediateRequest {
   /** Base64-encoded image bytes, without the `data:` URL prefix. */
   image: string;
   mimeType: string;
+  /** Set when `image` is one user-drawn region; absent for a whole page. */
+  region?: RegionKind;
 }
+
+/**
+ * One piece of a page in reading order. Client-side only: the server still
+ * answers with a `RemediationResult` per request.
+ */
+export type ContentBlock = { kind: 'text'; text: string } | { kind: 'math'; formula: Formula };
+
+/**
+ * Max regions drawn per upload. Each region is one model call, so this bounds
+ * the requests a single annotated upload makes.
+ */
+export const MAX_REGIONS_PER_UPLOAD = 60;
 
 export interface ApiErrorBody {
   error: string;

@@ -2,14 +2,14 @@ import { Pacer } from './pace.js';
 import { withRetry } from './retry.js';
 import {
   CheckCache,
-  PROMPT,
   RESPONSE_JSON_SCHEMA,
   UpstreamError,
   parseModelJson,
+  promptFor,
   type CheckResult,
   type RemediationProvider,
 } from './provider.js';
-import type { RemediationResult } from '../src/shared/remediation.types.js';
+import type { RegionKind, RemediationResult } from '../src/shared/remediation.types.js';
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -90,7 +90,11 @@ export class OpenAIProvider implements RemediationProvider {
     }
   }
 
-  async remediateImage(base64Image: string, mimeType: string): Promise<RemediationResult> {
+  async remediateImage(
+    base64Image: string,
+    mimeType: string,
+    region?: RegionKind,
+  ): Promise<RemediationResult> {
     if (!this.apiKey) {
       throw new UpstreamError('Neither OPENAI_API_KEY nor GPT_KEY is set.', 500);
     }
@@ -108,7 +112,7 @@ export class OpenAIProvider implements RemediationProvider {
         {
           role: 'user',
           content: [
-            { type: 'text', text: PROMPT },
+            { type: 'text', text: promptFor(region) },
             // A data URL is the portable way to inline an image on this API.
             { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } },
           ],
