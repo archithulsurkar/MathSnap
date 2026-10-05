@@ -4,7 +4,7 @@
 2. **Part 2: Own model, trained on the Mac Studio (96GB).** Full plan in [TRAINING.md](TRAINING.md); summary below.
 
 ## Status (2026-10-05)
-- The repo was re-created today, and the old stash with the Part 1 work in progress was lost. Part 1 is being rebuilt on `feat/region-reading-order`. Done so far: shared types and the server side (section 4 and 5). temml is already a dependency.
+- Part 1 is built on `feat/region-reading-order` (PR #1): every section below is done, and checked in a browser against a fake backend (`npm run test:e2e:regions`). What remains is a run against a real model with handwritten notes. The old stash was lost when the repo was re-created, so this is a rewrite of it.
 - The `PROMPT` backslash bug (the model got `\pm` as `pm`, `\times` as TAB + `imes`) is fixed: the prompts use `String.raw`.
 - If you write files through the Bash tool (heredocs, python `-`), `\\` collapses to `\`. Make edits that contain backslashes with the Edit or Write tool instead.
 
@@ -101,8 +101,8 @@ Full plan: [TRAINING.md](TRAINING.md). This replaces the earlier idea of a small
 ## Repo-side prerequisites
 1. Done: fix the `PROMPT` backslash bug.
 2. Done: `promptFor(region)` with `TEXT_REGION_PROMPT` / `MATH_REGION_PROMPT`. Training uses all three prompts verbatim.
-3. `eval/run.ts --predictions <jsonl>`, so the Python side is scored with the app's own metric.
-4. ADR `docs/adr/0002-training-data.md` on dataset licences (MathWriting is CC BY-NC-SA; IAM and CROHME are research-only; UniMER-1M is unclear). It decides whether the weights are research-only or shippable.
+3. Done: `eval/run.ts --predictions <jsonl>`, so the Python side is scored with the app's own metric.
+4. Drafted, decision pending: ADR `docs/adr/0002-training-data.md` on dataset licences (MathWriting is CC BY-NC-SA; IAM and CROHME are research-only; UniMER-1M is unclear). It decides whether the weights are research-only or shippable.
 
 ## Handwriting reality
 | | Printed | Handwritten |

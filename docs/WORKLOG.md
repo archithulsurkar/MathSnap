@@ -28,26 +28,26 @@ Plan details live in [PLANS.md](PLANS.md). This file tracks what got done and wh
 
 ### Done
 - Fixed the `PROMPT` backslash bug on `main`: `server/provider.ts` now uses `String.raw`. Regression test in `server/provider.test.ts`. 138 tests pass, server typecheck clean.
+- Region tool rebuilt and finished on `feat/region-reading-order` (PR #1): server region prompts, shared types, `regions` / `inline-math` / `blocks` helpers, `buildLatexDocument`, region editor, annotate step, block-ordered results and exports, client 429 retry. `temml` was already a dependency.
+- `npm run eval -- --predictions <jsonl>` for scoring the training pipeline's output.
+- ADR 0002 on training-data licences, status Proposed.
+- Cleared most ROADMAP known issues (see CHANGELOG [Unreleased]).
+- Checks: 198 unit tests; typecheck; `e2e/regions.mjs` (fake backend, 22 checks) and `e2e/ui.mjs` (run against a fake API) both pass. pdflatex is not installed here, so `npm run test:compile` skipped.
 
 ## TODO
 
-### Part 1: region tool (redo the lost WIP first)
-- [ ] Server: `promptFor(region?)` with `TEXT_REGION_PROMPT` / `MATH_REGION_PROMPT` (use `String.raw`), wired into `gemini.ts`, `ollama.ts`, `openai.ts`; `region` validation in `server/index.ts` (400 `bad_request`).
-- [ ] Shared types: `RemediateRequest.region`, `ContentBlock`, `MAX_REGIONS_PER_UPLOAD`.
-- [ ] Helpers + tests: `src/regions.ts`, `src/inline-math.ts`, `src/blocks.ts`.
-- [ ] `src/latex.ts`: `textWithInlineMath`, `buildLatexDocument`; refactor `e2e/compile.ts`.
-- [ ] Add `temml` dependency for inline LaTeX → MathML.
-- [ ] `src/region-editor.component.ts` / `.html`: pointer-event drawing, Text/Math toggle (`T`/`M`), numbered colour-coded boxes, keyboard-operable side list (kind toggle, move up/down, delete), "Clear page", 60-region cap.
-- [ ] `src/app.component.ts` / `.html`: `'annotating'` status, `pages` / `regionsByPage` / `currentPage` state, Prev/Next page, `analyzeRegions()` (crop at natural resolution, one request per box, "Region i of N" progress), `analyzeWholePages()` fallback, "Analyze whole page instead" button.
-- [ ] Results view renders ordered `ContentBlock`s; inline `$...$` rendered via temml + `sanitizeMathml`, raw `<code>` fallback.
-- [ ] `exportToLatex()` emits blocks in reading order.
-- [ ] `src/services/remediation.service.ts`: optional `region` arg; on 429 wait `Retry-After` and retry once.
-- [ ] `e2e/ui.mjs`: click "Analyze whole page instead" after upload; add a draw-one-box-and-analyze step.
-- [ ] Manual check: handwritten photo with text/math/text boxes reordered; 2-page PDF with no boxes on page 2; whole-page fallback matches old behaviour.
+### Needs you
+- [ ] ADR 0002: choose A (research-only), B (shippable) or C (both, ship only B). Recommendation C.
+- [ ] Record the Mac Studio's chip (M2 Max or M3 Ultra).
+- [ ] Run against a real model: `npm run dev` with a provider, then `npm run test:e2e`, and by hand a handwritten photo with text/maths/text boxes reordered.
+- [ ] Install a TeX distribution (or use CI) and run `npm run test:compile`.
+
+### Part 1 follow-ups
+- [ ] History loses reading order on reopen (stores text and formulas apart; needs a schema change).
+- [ ] Whole-page reads still list all text then all formulas (ROADMAP 0.4.0 placeholders).
+- [ ] Box resize/move handles (out of scope so far: delete and redraw).
 
 ### Part 2: own model on the Mac Studio (see [TRAINING.md](TRAINING.md))
-- [ ] `eval/run.ts --predictions <jsonl>`, scored with `scoreFormula`.
-- [ ] ADR `docs/adr/0002-training-data.md`: dataset licences, research-only vs shippable weights.
-- [ ] Record the Mac Studio's chip (M2 Max or M3 Ultra) and size the stages after the stage 0 smoke run.
+- [ ] Stage 0 smoke run once the ADR is decided; size the stages from its throughput.
 - [ ] Data collection: opt-in region crop saving with their LaTeX; in-app LaTeX correction step (feeds stage 3).
 - [ ] Add a confidence / "verify" signal before trusting any handwriting output.
