@@ -20,7 +20,19 @@ The training output must drop into the existing `ollama` provider (`server/ollam
 4. Write ADR `docs/adr/0002-training-data.md` on licences. MathWriting is CC BY-NC-SA; IAM and CROHME are research-only; UniMER-1M is unclear. Decide whether the weights are research-only or shippable. If shippable, drop the NC/research sources.
 
 ## 1. Environment (Mac Studio, 96GB)
-- Python 3.11+ via `uv`, in a new `train/` dir in the repo (code only). Data lives outside the repo at `~/mathsnap-data/` (or an external SSD).
+- **One directory on the Mac: `~/MathSnap`, which is the git clone.** Everything else lives inside it in gitignored folders, so the project is one folder to back up, move or delete:
+
+  ```
+  ~/MathSnap/                 git clone (app, server, eval, docs)
+    train/                    training code (committed)
+      .venv/                  Python env, made by uv            (ignored)
+      data/                   downloads, renders, jsonl splits  (ignored)
+      runs/                   checkpoints and logs per run      (ignored)
+      export/                 fused weights, GGUF, Modelfile    (ignored)
+    .env                      local settings                    (ignored)
+  ```
+- Python 3.11+ via `uv`, run from `train/` (`uv sync` creates `train/.venv`).
+- Ollama keeps its own model store (`~/.ollama/models`), shared by every model on the Mac, so the exported GGUF is registered with `ollama create` from `train/export/` rather than moved into the project folder.
 - **Disk budget:** ~200GB (fusion 28GB plus MathWriting, UniMER, renders, checkpoints).
 - **Main stack:** `mlx` + `mlx-vlm` (LoRA fine-tuning of Qwen-VL-family models on Apple Silicon).
 - **Fallback stack:** PyTorch MPS + HF `transformers` + `peft`, if mlx-vlm lacks the chosen base.
@@ -94,7 +106,7 @@ Score with `npm run eval -- --predictions`. Track:
 - `train/data/{fetch,render_inkml,render_pages,augment,build_jsonl,split}.py`.
 - `train/{train,predict,export}.py`.
 - `tools/normalize-labels.ts`; `eval/run.ts --predictions`.
-- `.gitignore`: `train/runs/`, `*.safetensors`, `*.gguf`.
+- `.gitignore`: `train/.venv/`, `train/data/`, `train/runs/`, `train/export/`, `*.safetensors`, `*.gguf` (already added).
 
 ## Verification
 - Stage 0 smoke completes on the Mac Studio without OOM, logging peak memory and samples/s, and `predict.py` emits valid JSON for 20 samples.
