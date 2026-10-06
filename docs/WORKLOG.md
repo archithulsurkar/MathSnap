@@ -32,15 +32,22 @@ Plan details live in [PLANS.md](PLANS.md). This file tracks what got done and wh
 - `npm run eval -- --predictions <jsonl>` for scoring the training pipeline's output.
 - ADR 0002 on training-data licences: accepted, option C.
 - Cleared most ROADMAP known issues (see CHANGELOG [Unreleased]).
-- Checks: 198 unit tests; typecheck; `e2e/regions.mjs` (fake backend, 22 checks) and `e2e/ui.mjs` (run against a fake API) both pass. pdflatex is not installed here, so `npm run test:compile` skipped.
+- Checks: 201 unit tests; typecheck; `e2e/regions.mjs` (fake backend, 23 checks) and `e2e/ui.mjs` against the real model both pass. pdflatex is not installed here, so `npm run test:compile` skipped.
+- Real model: `npm run test:e2e` passes 24/24 against `qwen2.5vl:7b` on the Mac Studio. It found that a maths box comes back with the formula in both fields; fixed (`blocksFromRegion`).
+- Mac Studio set up headless: `ssh mac` (key only from this PC), DHCP-reserved at 192.168.0.216, auto-restart, no sleep, Screen Sharing (RealVNC), auto-login so the Ollama app starts by itself. Tested a restart over SSH: back in 26s with Ollama serving.
+- Project on the Mac is one folder, `~/MathSnap` (git clone; training data in gitignored `train/` folders).
 
 ## TODO
 
 ### Needs you
 - [x] ADR 0002: option C (research model first, ship only the permissive one).
 - [x] Mac Studio is an M4 Max with 128GB; project cloned at `~/MathSnap`, Ollama reachable at 192.168.0.216:11434, SSH as `seclab` works.
-- [ ] Run against a real model: `npm run dev` with a provider, then `npm run test:e2e`, and by hand a handwritten photo with text/maths/text boxes reordered.
+- [x] Real-model e2e (`qwen2.5vl:7b`).
+- [ ] Mac security: auto-login means FileVault is off and the console is open after a restart; Ollama's API is open to the whole LAN; SSH still accepts passwords. Choose A+B+C (lock screen on login, only this PC may reach Ollama/VNC, SSH keys only) or D (FileVault on, no auto-login, Ollama as a boot service; needs the password after a power cut).
+- [ ] By hand: a handwritten photo with text/maths/text boxes, reordered.
+- [ ] Review and merge PR #1.
 - [ ] Install a TeX distribution (or use CI) and run `npm run test:compile`.
+- [ ] Say go for training step 1 (`uv` + `mlx-vlm` env in `~/MathSnap/train`, ~1GB).
 
 ### Part 1 follow-ups
 - [ ] History loses reading order on reopen (stores text and formulas apart; needs a schema change).
@@ -48,6 +55,7 @@ Plan details live in [PLANS.md](PLANS.md). This file tracks what got done and wh
 - [ ] Box resize/move handles (out of scope so far: delete and redraw).
 
 ### Part 2: own model on the Mac Studio (see [TRAINING.md](TRAINING.md))
-- [ ] Stage 0 smoke run once the ADR is decided; size the stages from its throughput.
+- [ ] Base-model bake-off needs 20+ labelled images; `eval/dataset` has one entry and its image is not committed. CROHME test could stand in for handwriting once its licence row is checked.
+- [ ] Stage 0 smoke run; size the stages from its throughput.
 - [ ] Data collection: opt-in region crop saving with their LaTeX; in-app LaTeX correction step (feeds stage 3).
 - [ ] Add a confidence / "verify" signal before trusting any handwriting output.
