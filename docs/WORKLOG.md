@@ -38,7 +38,7 @@ Plan details live in [PLANS.md](PLANS.md). This file tracks what got done and wh
 
 ### Needs you
 - [ ] ADR 0002: choose A (research-only), B (shippable) or C (both, ship only B). Recommendation C.
-- [ ] Record the Mac Studio's chip (M2 Max or M3 Ultra).
+- [x] Mac Studio is an M4 Max with 128GB; project cloned at `~/MathSnap`, Ollama reachable at 192.168.0.216:11434, SSH as `seclab` works.
 - [ ] Run against a real model: `npm run dev` with a provider, then `npm run test:e2e`, and by hand a handwritten photo with text/maths/text boxes reordered.
 - [ ] Install a TeX distribution (or use CI) and run `npm run test:compile`.
 

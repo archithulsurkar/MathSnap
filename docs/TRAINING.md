@@ -6,8 +6,8 @@
 MathSnap sends page images to hosted VLMs (Gemini/OpenAI-compatible) or a local Ollama model. The goal is one locally trained vision-language model that handles text + math, printed + handwritten, crops + whole pages. It should be good enough to become the default provider, with hosted models only as a fallback.
 
 User decisions so far:
-- Train on the Mac Studio with 96GB unified memory (record the exact chip, M2 Max or M3 Ultra, before sizing the stages; it sets throughput).
-- Training memory and end-user inference memory are separate: 96GB is for training only. The shipped model must still run in ≤4GB at 4-bit.
+- Train on the Mac Studio: Apple M4 Max, 128GB unified memory, 387GB free disk (checked 2026-10-05).
+- Training memory and end-user inference memory are separate: 128GB is for training only. The shipped model must still run in ≤4GB at 4-bit.
 - Use public data and pretrained weights; no own note photos exist yet.
 - One model, not a two-model pipeline.
 
@@ -19,7 +19,7 @@ The training output must drop into the existing `ollama` provider (`server/ollam
 3. Add `eval/run.ts --predictions <jsonl>`, scoring with `scoreFormula` (`eval/score.ts:55`). The Python side can then be benchmarked with the app's exact metric.
 4. Write ADR `docs/adr/0002-training-data.md` on licences. MathWriting is CC BY-NC-SA; IAM and CROHME are research-only; UniMER-1M is unclear. Decide whether the weights are research-only or shippable. If shippable, drop the NC/research sources.
 
-## 1. Environment (Mac Studio, 96GB)
+## 1. Environment (Mac Studio, M4 Max, 128GB)
 - **One directory on the Mac: `~/MathSnap`, which is the git clone.** Everything else lives inside it in gitignored folders, so the project is one folder to back up, move or delete:
 
   ```
@@ -42,7 +42,7 @@ The training output must drop into the existing `ollama` provider (`server/ollam
 ## 2. Pick the base model (zero-shot bake-off, day 1)
 - **Candidates:** small VLMs with permissive licences, about 2–7B. Examples: Qwen2.5-VL-7B (Apache-2.0); Qwen2.5-VL-3B (check licence, possibly research-only); newer Qwen-VL 2–4B releases if any are Apache-2.0; SmolVLM2 (Apache-2.0).
 - **Method:** run each zero-shot on `eval/dataset` and a 500-sample slice of CROHME 2019 test, using the app's prompts, and score with `npm run eval -- --predictions`.
-- **Pick** the best `handwritten` exact score that also fits a 4-bit inference budget of ≤4GB for end users. 3–4B is the likely winner; 7B only if it is far better. 96GB can train a 7B comfortably, but a 7B at Q4 is ~5GB and breaks the end-user budget, so it ships only as an opt-in "large" model.
+- **Pick** the best `handwritten` exact score that also fits a 4-bit inference budget of ≤4GB for end users. 3–4B is the likely winner; 7B only if it is far better. 128GB can train a 7B comfortably, but a 7B at Q4 is ~5GB and breaks the end-user budget, so it ships only as an opt-in "large" model.
 - **Optional teacher:** if the 7B is clearly better, fine-tune it too and use it to pseudo-label the stage 3 data for the 3–4B student. This replaces Gemini as the labeller, which its API terms rule out anyway.
 
 ## 3. Data pipeline (`train/data/`)
@@ -67,10 +67,10 @@ Steps:
 7. **Resolution caps:** crops ≤ ~448px on the long side, pages ~1280px. These bound vision tokens, and therefore speed. Memory allows more, but the caps must match what the app sends at inference time, so raise them only together with the app's page render size.
 
 ## 4. Training plan
-- **Method:** LoRA on the language model (rank 32–64, alpha 2×rank) with the base in **bf16**, not 4-bit: 96GB holds it, and it avoids QLoRA's quantization noise. Vision tower frozen at first; unfreeze its last blocks (or LoRA them) in stage 2 if handwriting plateaus, since memory is no longer the constraint.
+- **Method:** LoRA on the language model (rank 32–64, alpha 2×rank) with the base in **bf16**, not 4-bit: 128GB holds it, and it avoids QLoRA's quantization noise. Vision tower frozen at first; unfreeze its last blocks (or LoRA them) in stage 2 if handwriting plateaus, since memory is no longer the constraint.
 - **Hyperparameters to start:** lr 1e-4 cosine, warmup 3%, batch 4–8 with grad accumulation 2–4 (effective 16), gradient checkpointing off unless memory runs short. Checkpoint every 1k steps; evaluate every 5k.
 - **Rough memory:** 3–4B bf16 LoRA ≈ 20–35GB at batch 8 with page-size images; 7B ≈ 40–60GB. Measure in stage 0.
-- **Throughput:** rough guess only, 3–4B at about 3–6 samples/s (M3 Ultra toward the top, M2 Max toward the bottom), i.e. ~250–500k samples/day. Still use a curated **subsample**, not all 6.9M.
+- **Throughput:** rough guess only, 3–4B at about 3–6 samples/s on the M4 Max (measure in stage 0), i.e. ~250–500k samples/day. Still use a curated **subsample**, not all 6.9M.
 
 | Stage | Data | Samples | Goal |
 |---|---|---|---|

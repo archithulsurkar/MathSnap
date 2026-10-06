@@ -1,7 +1,7 @@
 # LaTeX-mini plans
 
 1. **Part 1: Manual reading-order region tool.** Build now.
-2. **Part 2: Own model, trained on the Mac Studio (96GB).** Full plan in [TRAINING.md](TRAINING.md); summary below.
+2. **Part 2: Own model, trained on the Mac Studio (M4 Max, 128GB).** Full plan in [TRAINING.md](TRAINING.md); summary below.
 
 ## Status (2026-10-05)
 - Part 1 is built on `feat/region-reading-order` (PR #1): every section below is done, and checked in a browser against a fake backend (`npm run test:e2e:regions`). What remains is a run against a real model with handwritten notes. The old stash was lost when the repo was re-created, so this is a rewrite of it.
@@ -94,7 +94,7 @@ Full plan: [TRAINING.md](TRAINING.md). This replaces the earlier idea of a small
 
 ## Summary
 - **One model** for text and math, printed and handwritten, crops and whole pages: a small vision-language model (Qwen-VL class, likely 3–4B), fine-tuned with LoRA.
-- **Training:** Mac Studio, 96GB unified memory, `mlx-vlm`, base model in bf16. Public data and pretrained weights only, since there are no note photos of our own yet.
+- **Training:** Mac Studio (M4 Max), 128GB unified memory, `mlx-vlm`, base model in bf16. Public data and pretrained weights only, since there are no note photos of our own yet.
 - **Shipping:** quantized to Q4 GGUF and run through the existing `ollama` provider, returning the app's JSON shape, so the app needs no new provider code. It must run in ≤4GB for end users; a 7B can ship only as an opt-in "large" model.
 - Speech is not needed: NVDA/JAWS read MathML directly. The model's only job is text and LaTeX; LaTeX→MathML is deterministic (temml).
 
