@@ -76,7 +76,8 @@ await page.route('**/api/remediate', async (route) => {
     body.region === 'text'
       ? { originalText: `Text box ${n} says $x^{2}$ costs \\$5.`, formulas: [] }
       : body.region === 'math'
-        ? { originalText: '', formulas: [formula(`a_{${n}}`, n)] }
+        ? // Real models echo the formula into the text field too (qwen2.5vl does).
+          { originalText: `echoed a_${n}`, formulas: [formula(`a_{${n}}`, n)] }
         : { originalText: `Whole page ${n}.`, formulas: [formula(`a_{${n}}`, n)] };
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(result) });
 });
@@ -92,6 +93,24 @@ async function drawBox(x1, y1, x2, y2) {
 }
 
 const listItems = () => page.locator('app-region-editor ol > li');
+
+/**
+ * Polls `read` until `ok` accepts its value or the timeout passes, and returns
+ * the last value. The app is zoneless, so a click's effect can land a frame
+ * after the click resolves; reading once straight away is a race.
+ */
+async function eventually(read, ok, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  let value = await read();
+  while (!ok(value) && Date.now() < deadline) {
+    await page.waitForTimeout(50);
+    value = await read();
+  }
+  return value;
+}
+
+const kindsInList = async () =>
+  (await listItems().locator(':scope > div:first-child > button').allTextContents()).map((t) => t.trim()).join(',');
 
 async function upload() {
   await page.setInputFiles('#file-upload', PDF);
@@ -111,31 +130,44 @@ await drawBox(0.1, 0.1, 0.6, 0.2);
 await page.keyboard.press('m');
 await drawBox(0.1, 0.3, 0.7, 0.45);
 await drawBox(0.5, 0.5, 0.505, 0.505); // a click-sized slip, ignored
-check('two boxes drawn, slip ignored', (await listItems().count()) === 2, `${await listItems().count()} in list`);
-const kinds = await Promise.all([0, 1].map((i) => listItems().nth(i).locator('button').first().textContent()));
-check('M switches the kind of new boxes', kinds.map((t) => t.trim()).join(',') === 'Text,Maths', kinds.join(','));
+const drawn = await eventually(() => listItems().count(), (n) => n === 2);
+check('two boxes drawn, slip ignored', drawn === 2, `${drawn} in list`);
+const kinds = await eventually(kindsInList, (k) => k === 'Text,Maths');
+check('M switches the kind of new boxes', kinds === 'Text,Maths', kinds);
 
 await drawBox(0.2, 0.7, 0.4, 0.8);
+await eventually(() => listItems().count(), (n) => n === 3);
 await page.keyboard.press('Delete');
-check('Delete removes the selected box', (await listItems().count()) === 2);
+const afterDelete = await eventually(() => listItems().count(), (n) => n === 2);
+check('Delete removes the selected box', afterDelete === 2, `${afterDelete} in list`);
 
 // --- reorder from the list ---
 await listItems().nth(1).locator('button:has-text("Up")').click();
-const reordered = await Promise.all([0, 1].map((i) => listItems().nth(i).locator('button').first().textContent()));
-check('Up moves a box earlier', reordered.map((t) => t.trim()).join(',') === 'Maths,Text', reordered.join(','));
+const reordered = await eventually(kindsInList, (k) => k === 'Maths,Text');
+check('Up moves a box earlier', reordered === 'Maths,Text', reordered);
 
 await page.screenshot({ path: path.join(TMP, 'regions-annotate.png') });
 
 // --- second page gets one text box, the rest none ---
 await page.click('button:has-text("Next page")');
-check('next page shown', await page.isVisible(`text=Page 2 of ${PDF_PAGES}`));
-check('page 2 starts empty', (await listItems().count()) === 0);
+const onPage2 = await page
+  .waitForSelector(`text=Page 2 of ${PDF_PAGES}`, { timeout: 5000 })
+  .then(() => true)
+  .catch(() => false);
+check('next page shown', onPage2);
+const page2Count = await eventually(() => listItems().count(), (n) => n === 0);
+check('page 2 starts empty', page2Count === 0, `${page2Count} in list`);
 await page.click('button[aria-pressed]:has-text("Text")');
 await drawBox(0.05, 0.05, 0.95, 0.3);
-check('pages without boxes are announced', await page.isVisible('text=/1 page has no boxes/'));
+const announced = await page
+  .waitForSelector('text=/1 page has no boxes/', { timeout: 5000 })
+  .then(() => true)
+  .catch(() => false);
+check('pages without boxes are announced', announced);
 
 await page.click('button:has-text("Previous page")');
-check('boxes kept when paging back', (await listItems().count()) === 2);
+const backCount = await eventually(() => listItems().count(), (n) => n === 2);
+check('boxes kept when paging back', backCount === 2, `${backCount} in list`);
 
 // --- read: one request per box, then the unboxed page whole ---
 await page.click('button:has-text("Read 3 boxes")');
@@ -158,6 +190,7 @@ check('results follow the reading order', positions.every((p, i) => p >= 0 && (i
 const inlineMath = await page.locator('main span math').count();
 check('inline $...$ rendered as MathML', inlineMath === 2, `${inlineMath} inline <math>`);
 check('escaped dollar shown as a dollar', content.includes('costs $5.'));
+check('a maths box’s echoed text is dropped', !content.includes('echoed'));
 check('summary counts formulas', await page.isVisible(`text=/2 formulas from ${PDF_PAGES} pages/`));
 
 // --- .tex export follows the same order ---

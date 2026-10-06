@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { blocksFromResult, countFormulas, resultFromBlocks } from './blocks.js';
+import { blocksFromRegion, blocksFromResult, countFormulas, resultFromBlocks } from './blocks.js';
 import type { Formula } from './shared/remediation.types.js';
 
 const formula = (latex: string): Formula => ({
@@ -22,6 +22,25 @@ test('blocksFromResult puts the text first, then each formula', () => {
 test('blocksFromResult drops blank text', () => {
   assert.deepEqual(blocksFromResult({ originalText: '  \n', formulas: [] }), []);
   assert.equal(blocksFromResult({ originalText: '', formulas: [formula('a')] }).length, 1);
+});
+
+test('a maths box keeps its formula and drops the same formula echoed as text', () => {
+  // What qwen2.5vl:7b actually returns for a crop of "v = u + at".
+  const blocks = blocksFromRegion('math', { originalText: 'v = u + at', formulas: [formula('v = u + at')] });
+  assert.deepEqual(blocks, [{ kind: 'math', formula: formula('v = u + at') }]);
+});
+
+test('a text box keeps its text and drops formulas listed alongside it', () => {
+  const blocks = blocksFromRegion('text', { originalText: 'so $x$ holds', formulas: [formula('x')] });
+  assert.deepEqual(blocks, [{ kind: 'text', text: 'so $x$ holds' }]);
+});
+
+test('a box falls back to the other field rather than losing what came back', () => {
+  assert.deepEqual(blocksFromRegion('math', { originalText: 'x = 1', formulas: [] }), [{ kind: 'text', text: 'x = 1' }]);
+  assert.deepEqual(blocksFromRegion('text', { originalText: ' ', formulas: [formula('a')] }), [
+    { kind: 'math', formula: formula('a') },
+  ]);
+  assert.deepEqual(blocksFromRegion('math', { originalText: '', formulas: [] }), []);
 });
 
 test('resultFromBlocks joins text with blank lines and keeps formula order', () => {

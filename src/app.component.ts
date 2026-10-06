@@ -5,7 +5,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { Formula, RemediationService, RemediationResult } from './services/remediation.service';
 import { buildLatexDocument, pageImageFilename } from './latex';
 import { buildStandaloneHtml } from './html-export';
-import { blocksFromResult, resultFromBlocks } from './blocks';
+import { blocksFromRegion, blocksFromResult, resultFromBlocks } from './blocks';
 import { splitInlineMath } from './inline-math';
 import { countRegions, fitWithin, toPixelRect, type Region } from './regions';
 import { RegionEditorComponent } from './region-editor.component';
@@ -251,7 +251,7 @@ export class AppComponent {
         const result = await this.remediationService.remediateImage(base64, mimeType, region, {
           onRateLimitWait: (seconds) => this.rateLimitNote.set(`Waiting ${seconds}s for the rate limit…`),
         });
-        blocks.push(...blocksFromResult(result));
+        blocks.push(...(region ? blocksFromRegion(region, result) : blocksFromResult(result)));
       } catch (error) {
         console.error(`${label} failed:`, error);
         failures.push(label);

@@ -158,6 +158,9 @@ log(`waiting for results (1 box + ${PDF_PAGES - 1} whole pages)`);
 await page.waitForSelector('h1:has-text("Results")', { timeout: 420000 });
 const firstFormula = await page.locator('main pre code').first().textContent();
 check('boxed formula read first', /v\s*=\s*u\s*\+\s*a\s*t/.test(firstFormula ?? ''), firstFormula?.trim());
+// Models echo a maths box's formula into the text field too; it must appear once.
+const echoed = await page.locator('main p.whitespace-pre-wrap', { hasText: /v\s*=\s*u\s*\+\s*a\s*t/ }).count();
+check('maths box not repeated as text', echoed === 0, `${echoed} text block(s) repeat it`);
 
 // --- error path: unsupported file ---
 log('testing rejection of a non-image file');
