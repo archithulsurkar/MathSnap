@@ -4,8 +4,8 @@ Date: 2026-10-05
 
 ## Status
 
-Proposed. The open question is in **Decision needed**; nothing is downloaded
-until it is answered.
+Accepted, 2026-10-05: **option C**. Both models are trained, the research
+model first; only the shippable one is ever distributed.
 
 ## Context
 
@@ -53,12 +53,20 @@ do and to pseudo-label our own notes, but never ship A or anything trained on
 A's labels. Train B from the permissive subset plus human-corrected own data,
 and ship only B. Labels a human has corrected count as ours.
 
-## Decision needed
+## Decision
 
-Choose A, B or C. **Recommendation: C.** It keeps the fast research path while
-leaving a clean route to something users can install.
+**C.** It keeps the fast research path while leaving a clean route to
+something users can install.
 
-Whatever is chosen, these hold:
+- The research track may use every source in the table, once its licence row
+  is checked. Its weights are tagged `research-only` and never leave the Mac
+  Studio except as evaluation numbers.
+- The shippable track uses only sources that allow it, a permissively licensed
+  base model, and our own data once a human has corrected it. Pseudo-labels
+  from the research model are a starting point for that correction, never
+  training data on their own.
+
+These also hold:
 
 - `train/data/fetch.py` records source, licence and (where known) writer id for
   every sample, so a shippable subset can be selected later without
@@ -71,8 +79,6 @@ Whatever is chosen, these hold:
   sample from them is used, and this table is updated.
 
 ## Consequences
-
-Under C:
 
 - Two training tracks to maintain, and the shippable model lags the research one
   on handwriting until our own corrected data grows (TRAINING.md stage 3).

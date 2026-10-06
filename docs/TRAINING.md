@@ -17,7 +17,7 @@ The training output must drop into the existing `ollama` provider (`server/ollam
 1. Fix the `PROMPT` backslash bug in `server/provider.ts:80-83` (Edit tool). Training prompts are copied from it, so it must be correct first.
 2. Add `promptFor(region)` with `TEXT_REGION_PROMPT` / `MATH_REGION_PROMPT` (PLANS Part 1 §5). Training uses all three prompts verbatim, so the app and the model agree.
 3. Add `eval/run.ts --predictions <jsonl>`, scoring with `scoreFormula` (`eval/score.ts:55`). The Python side can then be benchmarked with the app's exact metric.
-4. Write ADR `docs/adr/0002-training-data.md` on licences. MathWriting is CC BY-NC-SA; IAM and CROHME are research-only; UniMER-1M is unclear. Decide whether the weights are research-only or shippable. If shippable, drop the NC/research sources.
+4. Done: ADR `docs/adr/0002-training-data.md`, option C. Two tracks: a research model on every licence-checked source, tagged `research-only` and never distributed; and a shippable model on permissive sources and our own corrected data, which is the only one that ships.
 
 ## 1. Environment (Mac Studio, M4 Max, 128GB)
 - **One directory on the Mac: `~/MathSnap`, which is the git clone.** Everything else lives inside it in gitignored folders, so the project is one folder to back up, move or delete:

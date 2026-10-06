@@ -102,7 +102,7 @@ Full plan: [TRAINING.md](TRAINING.md). This replaces the earlier idea of a small
 1. Done: fix the `PROMPT` backslash bug.
 2. Done: `promptFor(region)` with `TEXT_REGION_PROMPT` / `MATH_REGION_PROMPT`. Training uses all three prompts verbatim.
 3. Done: `eval/run.ts --predictions <jsonl>`, so the Python side is scored with the app's own metric.
-4. Drafted, decision pending: ADR `docs/adr/0002-training-data.md` on dataset licences (MathWriting is CC BY-NC-SA; IAM and CROHME are research-only; UniMER-1M is unclear). It decides whether the weights are research-only or shippable.
+4. Done: ADR `docs/adr/0002-training-data.md` accepted with option C. Train a research model on every licence-checked source (never distributed) and a shippable one on permissive sources plus our own corrected data (the only one that ships).
 
 ## Handwriting reality
 | | Printed | Handwritten |

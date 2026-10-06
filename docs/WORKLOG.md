@@ -30,14 +30,14 @@ Plan details live in [PLANS.md](PLANS.md). This file tracks what got done and wh
 - Fixed the `PROMPT` backslash bug on `main`: `server/provider.ts` now uses `String.raw`. Regression test in `server/provider.test.ts`. 138 tests pass, server typecheck clean.
 - Region tool rebuilt and finished on `feat/region-reading-order` (PR #1): server region prompts, shared types, `regions` / `inline-math` / `blocks` helpers, `buildLatexDocument`, region editor, annotate step, block-ordered results and exports, client 429 retry. `temml` was already a dependency.
 - `npm run eval -- --predictions <jsonl>` for scoring the training pipeline's output.
-- ADR 0002 on training-data licences, status Proposed.
+- ADR 0002 on training-data licences: accepted, option C.
 - Cleared most ROADMAP known issues (see CHANGELOG [Unreleased]).
 - Checks: 198 unit tests; typecheck; `e2e/regions.mjs` (fake backend, 22 checks) and `e2e/ui.mjs` (run against a fake API) both pass. pdflatex is not installed here, so `npm run test:compile` skipped.
 
 ## TODO
 
 ### Needs you
-- [ ] ADR 0002: choose A (research-only), B (shippable) or C (both, ship only B). Recommendation C.
+- [x] ADR 0002: option C (research model first, ship only the permissive one).
 - [x] Mac Studio is an M4 Max with 128GB; project cloned at `~/MathSnap`, Ollama reachable at 192.168.0.216:11434, SSH as `seclab` works.
 - [ ] Run against a real model: `npm run dev` with a provider, then `npm run test:e2e`, and by hand a handwritten photo with text/maths/text boxes reordered.
 - [ ] Install a TeX distribution (or use CI) and run `npm run test:compile`.
