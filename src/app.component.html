@@ -223,7 +223,6 @@
       }
       @case ('annotating') {
         @let pageCount = pages().length;
-        @let pageLabel = 'Page ' + (currentPage() + 1) + (pageCount > 1 ? ' of ' + pageCount : '');
         <h1 class="text-[1.75rem] font-bold leading-tight">Mark the reading order</h1>
         <p class="mt-2 max-w-prose text-ink-soft">
           Draw a box around each piece of text or maths, in the order it should be read. Each box is read on its own,
@@ -237,18 +236,23 @@
         @if (pageCount > 1) {
           <nav class="mt-6 flex items-center gap-2" aria-label="Pages">
             <button type="button" (click)="goToPage(currentPage() - 1)" [disabled]="currentPage() === 0" class="btn-quiet">Previous page</button>
-            <p class="px-2 font-bold tabular-nums" aria-live="polite">{{ pageLabel }}</p>
+            <p class="px-2 font-bold tabular-nums" aria-live="polite">{{ pageLabel() }}</p>
             <button type="button" (click)="goToPage(currentPage() + 1)" [disabled]="currentPage() === pageCount - 1" class="btn-quiet">Next page</button>
           </nav>
         }
 
         <div class="mt-6">
-          <app-region-editor
-            [pageUrl]="pages()[currentPage()].dataUrl"
-            [pageLabel]="pageLabel"
-            [remaining]="regionsRemaining()"
-            [regions]="currentRegions()"
-            (regionsChange)="setCurrentRegions($event)" />
+          <button type="button" (click)="openLargeView()" class="btn-quiet">Open large view</button>
+          @if (!largeOpen()) {
+            <div class="mt-4">
+              <app-region-editor
+                [pageUrl]="pages()[currentPage()].dataUrl"
+                [pageLabel]="pageLabel()"
+                [remaining]="regionsRemaining()"
+                [regions]="currentRegions()"
+                (regionsChange)="setCurrentRegions($event)" />
+            </div>
+          }
         </div>
 
         <div class="mt-8 flex flex-wrap items-center gap-2 border-t border-rule pt-6">
@@ -371,6 +375,37 @@
       }
     }
     </main>
+
+    <!-- Full-window annotation. Opens after upload; a native dialog traps focus and closes on Escape. -->
+    <dialog #largeView (close)="largeOpen.set(false)" aria-labelledby="large-view-heading"
+            class="m-0 h-dvh max-h-none w-dvw max-w-none bg-paper p-0 text-ink backdrop:bg-black/60">
+      @if (largeOpen() && pages().length) {
+        @let pageCount = pages().length;
+        <div class="flex h-full flex-col">
+          <header class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-rule px-4 py-2">
+            <h2 id="large-view-heading" class="text-lg font-bold">Mark the reading order</h2>
+            @if (pageCount > 1) {
+              <button type="button" (click)="goToPage(currentPage() - 1)" [disabled]="currentPage() === 0" class="btn-quiet">Previous page</button>
+              <p class="font-bold tabular-nums" aria-live="polite">{{ pageLabel() }}</p>
+              <button type="button" (click)="goToPage(currentPage() + 1)" [disabled]="currentPage() === pageCount - 1" class="btn-quiet">Next page</button>
+            } @else {
+              <p class="font-bold">{{ pageLabel() }}</p>
+            }
+            <p class="ml-auto hint tabular-nums">{{ regionCount() }} {{ regionCount() === 1 ? 'box' : 'boxes' }} drawn</p>
+            <button type="button" (click)="closeLargeView()" class="btn-primary" autofocus>Done</button>
+          </header>
+          <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
+            <app-region-editor
+              [large]="true"
+              [pageUrl]="pages()[currentPage()].dataUrl"
+              [pageLabel]="pageLabel()"
+              [remaining]="regionsRemaining()"
+              [regions]="currentRegions()"
+              (regionsChange)="setCurrentRegions($event)" />
+          </div>
+        </div>
+      }
+    </dialog>
 
     <!-- Copy buttons give no visual confirmation on their own; announce the result. -->
     <p class="sr-only" role="status">{{ copyFeedback() }}</p>

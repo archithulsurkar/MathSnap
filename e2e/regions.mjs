@@ -112,9 +112,17 @@ async function eventually(read, ok, timeoutMs = 5000) {
 const kindsInList = async () =>
   (await listItems().locator(':scope > div:first-child > button').allTextContents()).map((t) => t.trim()).join(',');
 
+/** Uploads the fixture; the full-window annotation view opens on its own. */
 async function upload() {
   await page.setInputFiles('#file-upload', PDF);
-  await page.waitForSelector('text=Mark the reading order', { timeout: 30000 });
+  await page.waitForSelector('dialog[open] app-region-editor img', { timeout: 30000 });
+}
+
+/** Leaves the large view for the inline annotate step, where the read buttons are. */
+async function done() {
+  await page.click('dialog[open] button:has-text("Done")');
+  await page.waitForSelector('dialog[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
+  await eventually(() => page.locator('dialog[open]').count(), (n) => n === 0);
 }
 
 await page.goto(APP, { waitUntil: 'networkidle' });
@@ -122,7 +130,11 @@ await page.goto(APP, { waitUntil: 'networkidle' });
 // --- annotate step appears instead of an immediate analysis ---
 await upload();
 check('upload stops at the annotate step', requests.length === 0, `${requests.length} requests sent`);
-check('pager shows page 1 of N', await page.isVisible(`text=Page 1 of ${PDF_PAGES}`));
+check('large view opens after upload', (await page.locator('dialog[open]').count()) === 1);
+const pageHeight = (await page.locator('dialog[open] app-region-editor img').boundingBox())?.height ?? 0;
+const viewport = page.viewportSize();
+check('large view shows the page at most of the window height', pageHeight > viewport.height * 0.7, `${Math.round(pageHeight)}px of ${viewport.height}px`);
+check('pager shows page 1 of N', await page.isVisible(`dialog[open] >> text=Page 1 of ${PDF_PAGES}`));
 check('read-boxes button disabled with no boxes', await page.isDisabled('button:has-text("Read 0 boxes")'));
 
 // --- drawing, kinds and the keyboard ---
@@ -149,9 +161,9 @@ check('Up moves a box earlier', reordered === 'Maths,Text', reordered);
 await page.screenshot({ path: path.join(TMP, 'regions-annotate.png') });
 
 // --- second page gets one text box, the rest none ---
-await page.click('button:has-text("Next page")');
+await page.click('dialog[open] button:has-text("Next page")');
 const onPage2 = await page
-  .waitForSelector(`text=Page 2 of ${PDF_PAGES}`, { timeout: 5000 })
+  .waitForSelector(`dialog[open] >> text=Page 2 of ${PDF_PAGES}`, { timeout: 5000 })
   .then(() => true)
   .catch(() => false);
 check('next page shown', onPage2);
@@ -159,15 +171,18 @@ const page2Count = await eventually(() => listItems().count(), (n) => n === 0);
 check('page 2 starts empty', page2Count === 0, `${page2Count} in list`);
 await page.click('button[aria-pressed]:has-text("Text")');
 await drawBox(0.05, 0.05, 0.95, 0.3);
+
+await page.click('dialog[open] button:has-text("Previous page")');
+const backCount = await eventually(() => listItems().count(), (n) => n === 2);
+check('boxes kept when paging back', backCount === 2, `${backCount} in list`);
+
+await done();
+check('Done closes the large view', (await page.locator('dialog[open]').count()) === 0);
 const announced = await page
   .waitForSelector('text=/1 page has no boxes/', { timeout: 5000 })
   .then(() => true)
   .catch(() => false);
 check('pages without boxes are announced', announced);
-
-await page.click('button:has-text("Previous page")');
-const backCount = await eventually(() => listItems().count(), (n) => n === 2);
-check('boxes kept when paging back', backCount === 2, `${backCount} in list`);
 
 // --- read: one request per box, then the unboxed page whole ---
 await page.click('button:has-text("Read 3 boxes")');
@@ -207,6 +222,8 @@ await page.screenshot({ path: path.join(TMP, 'regions-results.png'), fullPage: t
 await page.click('button:has-text("Start over")');
 requests = [];
 await upload();
+await page.keyboard.press('Escape');
+check('Escape closes the large view', (await eventually(() => page.locator('dialog[open]').count(), (n) => n === 0)) === 0);
 await page.click('button:has-text("Analyze whole page instead")');
 await page.waitForSelector('h1:has-text("Results")', { timeout: 30000 });
 check(
@@ -221,6 +238,7 @@ requests = [];
 rateLimitNext = 1;
 await upload();
 await drawBox(0.1, 0.1, 0.6, 0.3);
+await done();
 await page.click('button:has-text("Read 1 box")');
 const sawWait = await page
   .waitForSelector('text=/Waiting \\d+s for the rate limit/', { timeout: 5000 })

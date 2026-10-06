@@ -59,8 +59,9 @@ log(`uploading ${PDF_PAGES}-page PDF`);
 await page.setInputFiles('#file-upload', PDF);
 
 // Uploads stop at the annotate step; this run takes the whole-page path.
-await page.waitForSelector('text=Mark the reading order', { timeout: 30000 });
-check('upload opens the annotate step', true);
+await page.waitForSelector('dialog[open] app-region-editor img', { timeout: 30000 });
+check('upload opens the large annotation view', true);
+await page.click('dialog[open] button:has-text("Done")');
 await page.click('button:has-text("Analyze whole page instead")');
 
 // progress text proves the multi-page loop is running
@@ -145,7 +146,7 @@ log('screenshot saved');
 log('drawing one maths box on page 1');
 await page.click('button:has-text("Start over")');
 await page.setInputFiles('#file-upload', PDF);
-await page.waitForSelector('text=Mark the reading order', { timeout: 30000 });
+await page.waitForSelector('dialog[open] app-region-editor img', { timeout: 30000 });
 await page.click('button[aria-pressed]:has-text("Maths")');
 const pageBox = await page.locator('app-region-editor img').boundingBox();
 // The fixture's first formula, "v = u + at", sits about a fifth of the way down.
@@ -153,6 +154,7 @@ await page.mouse.move(pageBox.x + pageBox.width * 0.1, pageBox.y + pageBox.heigh
 await page.mouse.down();
 await page.mouse.move(pageBox.x + pageBox.width * 0.7, pageBox.y + pageBox.height * 0.27, { steps: 5 });
 await page.mouse.up();
+await page.click('dialog[open] button:has-text("Done")');
 await page.click('button:has-text("Read 1 box")');
 log(`waiting for results (1 box + ${PDF_PAGES - 1} whole pages)`);
 await page.waitForSelector('h1:has-text("Results")', { timeout: 420000 });

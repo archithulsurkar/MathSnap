@@ -1,5 +1,14 @@
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal, WritableSignal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  signal,
+  viewChild,
+  WritableSignal,
+} from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Formula, RemediationService, RemediationResult } from './services/remediation.service';
@@ -123,6 +132,29 @@ export class AppComponent {
   readonly regionsRemaining = computed(() => MAX_REGIONS_PER_UPLOAD - this.regionCount());
   readonly currentRegions = computed(() => this.regionsByPage()[this.currentPage()] ?? []);
   readonly pagesWithoutBoxes = computed(() => this.regionsByPage().filter((regions) => !regions.length).length);
+  readonly pageLabel = computed(() => {
+    const count = this.pages().length;
+    return `Page ${this.currentPage() + 1}${count > 1 ? ` of ${count}` : ''}`;
+  });
+
+  /**
+   * The full-window annotation view. It opens on its own once a document has
+   * loaded, so the page is drawn on at the largest size the screen allows.
+   */
+  private readonly largeView = viewChild<ElementRef<HTMLDialogElement>>('largeView');
+  readonly largeOpen = signal(false);
+
+  openLargeView(): void {
+    const dialog = this.largeView()?.nativeElement;
+    if (!dialog || dialog.open) return;
+    this.largeOpen.set(true);
+    dialog.showModal();
+  }
+
+  /** Closing by Escape goes through the dialog's own close event, which resets `largeOpen`. */
+  closeLargeView(): void {
+    this.largeView()?.nativeElement.close();
+  }
 
   /** The result in reading order. What the results view and both exports show. */
   blocks: WritableSignal<ContentBlock[]> = signal([]);
@@ -201,6 +233,7 @@ export class AppComponent {
       this.regionsByPage.set(pages.map(() => []));
       this.currentPage.set(0);
       this.status.set('annotating');
+      this.openLargeView();
     } catch (error) {
       this.fail(error, 'Failed to process file. An unknown error occurred.');
     }
@@ -233,6 +266,7 @@ export class AppComponent {
    * skipped and reported, so one unreadable box does not discard the rest.
    */
   private async analyze(work: { page: PageImage; regions: Region[] }[]): Promise<void> {
+    this.closeLargeView();
     const boxed = work.filter((item) => item.regions.length).length;
     const unit: ProgressUnit = boxed === 0 ? 'page' : boxed === work.length ? 'box' : 'part';
     const total = work.reduce((sum, item) => sum + Math.max(1, item.regions.length), 0);
@@ -607,6 +641,7 @@ export class AppComponent {
 
   reset(): void {
     this.stopSpeaking();
+    this.closeLargeView();
     this.latexInput.set('');
     this.status.set('idle');
     this.remediationResult.set({ formulas: [], originalText: '' });

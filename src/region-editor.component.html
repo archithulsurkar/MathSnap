@@ -11,9 +11,9 @@
   <button type="button" (click)="clear()" [disabled]="!regions().length" class="btn-text ml-auto">Clear page</button>
 </div>
 
-<div class="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem]">
-  <div class="relative self-start select-none rounded-sm border border-rule bg-panel">
-    <img [src]="pageUrl()" [alt]="pageLabel() + ' of the uploaded document'" class="block w-full h-auto" draggable="false">
+<div class="mt-4 grid gap-6" [class]="layoutClass()">
+  <div class="relative self-start select-none rounded-sm border border-rule bg-panel" [class]="pageFrameClass()">
+    <img [src]="pageUrl()" [alt]="pageLabel() + ' of the uploaded document'" class="block h-auto" [class]="pageImageClass()" draggable="false">
     <div #overlay
          tabindex="-1"
          class="absolute inset-0 touch-none outline-none"
@@ -24,18 +24,18 @@
          (pointerup)="onPointerUp($event)"
          (pointercancel)="onPointerCancel()">
       @for (region of regions(); track region.id; let i = $index) {
-        <div class="absolute border-2"
+        <div class="absolute"
              aria-hidden="true"
              [style]="boxStyle(region)"
              [class]="boxClass(region.kind, selectedId() === region.id)"
              (pointerdown)="$event.stopPropagation(); select(region.id)">
-          <span class="absolute -top-px -left-px px-1 text-xs font-bold leading-5 text-white tabular-nums"
-                [class.bg-sky-600]="region.kind === 'text'"
-                [class.bg-amber-600]="region.kind === 'math'">{{ i + 1 }}{{ region.kind === 'text' ? ' T' : ' M' }}</span>
+          <span class="absolute left-0 bottom-full whitespace-nowrap rounded-t-sm px-1.5 py-0.5 text-sm font-bold leading-4 tracking-wide text-white tabular-nums"
+                [class.bg-sky-700]="region.kind === 'text'"
+                [class.bg-amber-700]="region.kind === 'math'">{{ i + 1 }} {{ region.kind === 'text' ? 'TEXT' : 'MATHS' }}</span>
         </div>
       }
       @if (draft(); as rect) {
-        <div class="absolute border-2 border-dotted pointer-events-none"
+        <div class="absolute border-[3px] border-dotted pointer-events-none"
              aria-hidden="true"
              [style]="boxStyle(rect)"
              [class.border-sky-600]="kind() === 'text'"

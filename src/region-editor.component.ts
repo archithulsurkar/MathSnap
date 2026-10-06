@@ -27,6 +27,11 @@ export class RegionEditorComponent {
   /** How many more boxes the upload may take, across all pages. */
   readonly remaining = input(Number.POSITIVE_INFINITY);
   readonly regions = model.required<Region[]>();
+  /**
+   * Full-window mode: the page is sized to the window's height so the whole
+   * page is visible as large as it can be, with the list always beside it.
+   */
+  readonly large = input(false);
 
   readonly kind = signal<RegionKind>('text');
   readonly selectedId = signal<string | null>(null);
@@ -146,8 +151,24 @@ export class RegionEditorComponent {
    * badge carry the kind for readers who cannot tell the colours apart.
    */
   boxClass(kind: RegionKind, selected: boolean): string {
-    const colour = kind === 'text' ? 'border-sky-600 bg-sky-600/10' : 'border-amber-600 border-dashed bg-amber-600/10';
-    return selected ? `${colour} ring-4 ring-accent` : colour;
+    const colour =
+      kind === 'text'
+        ? 'border-[3px] border-sky-700 bg-sky-500/15'
+        : 'border-[3px] border-dashed border-amber-700 bg-amber-400/20';
+    return selected ? `${colour} ring-4 ring-accent ring-offset-2` : colour;
+  }
+
+  layoutClass(): string {
+    return this.large() ? 'grid-cols-[minmax(0,1fr)_18rem]' : 'lg:grid-cols-[minmax(0,1fr)_16rem]';
+  }
+
+  /** In large mode the frame shrinks to the page, so the overlay matches the image exactly. */
+  pageFrameClass(): string {
+    return this.large() ? 'w-fit justify-self-center' : '';
+  }
+
+  pageImageClass(): string {
+    return this.large() ? 'w-auto max-w-full max-h-[calc(100dvh-11rem)]' : 'w-full';
   }
 
   toggleClass(kind: RegionKind): string {
